@@ -149,11 +149,17 @@ async def redeem_points(cb: CallbackQuery):
     needed = int(db.get_setting("referral_points_for_pro", str(REFERRAL_POINTS_FOR_PRO)))
     points = float(user["referral_points"]) if user else 0
 
+    # Oldindan ko'rsatish uchun tez tekshiruv (UX) — lekin haqiqiy himoya
+    # pastdagi atomik UPDATE'da (WHERE referral_points>=needed).
     if points < needed:
         await cb.answer(t("referral_not_enough", lang, points=int(points), needed=needed), show_alert=True); return
 
     until = get_plan_until(user["plan_until"], 30)
-    db.redeem_referral_points(user_id, needed, until)
+    ok = db.redeem_referral_points(user_id, needed, until)
+    if not ok:
+        # Ikkinchi tez bosishda yoki ballar allaqachon ishlatilgan bo'lsa
+        await cb.answer(t("referral_not_enough", lang, points=int(points), needed=needed), show_alert=True)
+        return
     await cb.message.edit_text(t("referral_success", lang, until=until), reply_markup=back_main(lang))
     await cb.answer()
 

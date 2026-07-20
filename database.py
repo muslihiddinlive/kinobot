@@ -217,10 +217,22 @@ def add_referral_points(user_id,points):
 def deduct_referral_points(user_id,points):
     conn=get_conn(); conn.execute("UPDATE users SET referral_points=referral_points-? WHERE user_id=?",(points,user_id)); conn.commit(); conn.close()
 
-def redeem_referral_points(user_id,points,plan_until):
-    conn=get_conn()
-    conn.execute("UPDATE users SET referral_points=referral_points-?,plan='pro',plan_until=? WHERE user_id=?",(points,plan_until,user_id))
+def redeem_referral_points(user_id, points, plan_until):
+    """Ballarni PRO tarifga almashtiradi — ATOMIK.
+    WHERE shartida referral_points>=points tekshiriladi, shuning uchun
+    ikki so'rov bir vaqtda kelsa ham (masalan tugma tez-tez bosilsa),
+    faqat BITTASI muvaffaqiyatli bo'ladi (ballar yetarli bo'lgan
+    birinchi UPDATE). rowcount orqali natija qaytariladi.
+    """
+    conn = get_conn()
+    cur = conn.execute(
+        "UPDATE users SET referral_points=referral_points-?,plan='pro',plan_until=? "
+        "WHERE user_id=? AND referral_points>=?",
+        (points, plan_until, user_id, points)
+    )
+    success = cur.rowcount > 0
     conn.commit(); conn.close()
+    return success
 
 def ban_user(user_id):
     conn=get_conn(); conn.execute("UPDATE users SET is_banned=1,plan='banned' WHERE user_id=?",(user_id,)); conn.commit(); conn.close()

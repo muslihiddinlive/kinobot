@@ -145,21 +145,36 @@ async def cleanup_expired_plans():
     conn.close()
 
 async def scheduler_loop(bot):
-    """Asosiy scheduler loop"""
+    """Asosiy scheduler loop.
+    MUHIM: faqat 'hour==6 and minute==0' tekshirish restart'ga chidamsiz edi —
+    agar bot process aynan shu daqiqada qayta ishga tushsa (Render deploy/
+    spin-down/up juda tez-tez bo'ladi), o'sha kunlik vazifa butunlay
+    o'tkazib yuborilardi. Endi 'oxirgi bajarilgan sana' saqlanadi va soat
+    06:00 dan keyingi birinchi tick'da (hattoki 06:05, 06:10 bo'lsa ham)
+    bajariladi — shu kun ichida faqat bir marta.
+    """
+    last_daily_run = db.get_setting("scheduler_last_daily", "")
+    last_weekly_run = db.get_setting("scheduler_last_weekly", "")
+
     while True:
         now = datetime.now()
+        today_str = str(now.date())
 
         # Har daqiqa: rejalashtirilgan reklamalar
         await process_scheduled_broadcasts(bot)
 
-        # Soat 06:00 da
-        if now.hour == 6 and now.minute == 0:
+        # Soat 06:00 dan keyin, shu kun uchun hali bajarilmagan bo'lsa
+        if now.hour >= 6 and last_daily_run != today_str:
             await cleanup_expired_plans()
             await daily_subscribers_report(bot)
+            last_daily_run = today_str
+            db.set_setting("scheduler_last_daily", today_str)
 
-            # Dushanba — haftalik hisobot
-            if now.weekday() == 0:
+            # Dushanba — haftalik hisobot (shu hafta uchun hali bajarilmagan bo'lsa)
+            if now.weekday() == 0 and last_weekly_run != today_str:
                 await weekly_referral_stats(bot)
                 await weekly_report_to_db(bot)
+                last_weekly_run = today_str
+                db.set_setting("scheduler_last_weekly", today_str)
 
         await asyncio.sleep(60)
