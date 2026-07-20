@@ -63,7 +63,12 @@ def run_webhook():
         logger.info(f"✅ Webhook: {WEBHOOK_URL}")
 
     async def on_shutdown(_):
-        await bot.delete_webhook()
+        # MUHIM: bu yerda delete_webhook() chaqirilmasin!
+        # Render deploy qilganda eski instance shutdown bo'lganda, agar shu
+        # yerda webhook o'chirilsa - yangi instance allaqachon o'rnatgan
+        # webhookni o'chirib tashlaydi (race condition). Webhook har doim
+        # on_startup orqali qayta o'rnatiladi, shutdown'da o'chirish shart emas.
+        logger.info("Bot to'xtatilmoqda (webhook saqlab qolinadi)")
 
     async def health(request):
         return web.Response(text="OK", status=200)
