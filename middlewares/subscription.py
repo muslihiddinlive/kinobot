@@ -52,11 +52,15 @@ class SubscriptionMiddleware(BaseMiddleware):
             if cb_data == "back_main" or cb_data.startswith("check_subscription"):
                 return await handler(event, data)
 
-        # /start movie_CODE — deeplink xabarini middleware o'tkazib yuboradi
-        # Handler o'zi obunani tekshiradi va pending_code ni saqlaydi
+        # /start movie_CODE va /start ref_ID — deeplink xabarlarini middleware
+        # o'tkazib yuboradi. movie_ uchun handler o'zi obunani tekshiradi;
+        # ref_ (referal) uchun esa obuna talab qilinmasligi kerak — aks holda
+        # obunasiz foydalanuvchi referal sifatida ro'yxatga olinmay qoladi.
         if isinstance(event, Message) and event.text:
             parts = event.text.split()
-            if parts[0] == "/start" and len(parts) > 1 and parts[1].startswith("movie_"):
+            if parts[0] == "/start" and len(parts) > 1 and (
+                parts[1].startswith("movie_") or parts[1].startswith("ref_")
+            ):
                 return await handler(event, data)
 
         # DB da kanallar bor-yo'qligini tekshir
