@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: kinobot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: SUPERADMIN_ID
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: DB_GROUP_ID
+        sync: false
+      - key: WEBHOOK_DOMAIN
+        sync: false
+      - key: DB_PATH
+        value: kinobot.db
+    healthCheckPath: /health
