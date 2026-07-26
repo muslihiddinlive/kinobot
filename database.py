@@ -15,8 +15,16 @@ if _db_dir and not os.path.exists(_db_dir):
         pass
 
 def get_conn():
-    c = sqlite3.connect(DB_PATH)
+    # timeout=10: agar fayl vaqtincha band bo'lsa, darrov "database is locked"
+    # xatosi bilan yiqilib tushmasdan, 10 soniyagacha kutadi.
+    c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = sqlite3.Row
+    # WAL rejimi: o'qish va yozish bir-birini bloklamaydi (default rollback
+    # journal rejimida esa har bir yozish butun faylni qulflab qo'yardi —
+    # bir nechta foydalanuvchi bir vaqtda tugma bosganda ana shu "qotib
+    # qolish"larning asosiy sababi shu edi).
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=10000")
     return c
 
 def init_db():

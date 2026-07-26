@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import ChatMemberUpdated
+from aiogram.types import ChatMemberUpdated, ErrorEvent
 
 from config import BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT
 from database import init_db, init_episodes, save_bot_chat
@@ -36,6 +36,38 @@ def setup_dispatcher():
             chat = event.chat
             save_bot_chat(chat.id, chat.type, getattr(chat, "title", ""))
 
+    # MUHIM: global error handler.
+    # Har qanday handlerda kutilmagan xato (DB xatosi, None obyekt va h.k.)
+    # chiqsa ham, callback tugmasi "yuklanmoqda" holatida abadiy qotib
+    # qolmasligi kerak — shuning uchun bu yerda har doim cb.answer() yoki
+    # xabar yuborish kafolatlanadi.
+    @dp.errors()
+    async def global_error_handler(event: ErrorEvent):
+        logger.error(
+            f"Handler xatosi: {event.exception} | update_id={event.update.update_id}",
+            exc_info=event.exception,
+        )
+        try:
+            if event.update.callback_query:
+                await event.update.callback_query.answer(
+                    "⚠️ Xatolik yuz berdi, qayta urining.", show_alert=True
+                )
+            elif event.update.message:
+                await event.update.message.answer(
+                    "⚠️ Xatolik yuz berdi, qayta urining."
+                )
+        except Exception:
+            pass
+        try:
+            from config import DB_GROUP_ID
+            await bot.send_message(
+                DB_GROUP_ID,
+                f"🚨 Bot xatosi:\n<code>{event.exception}</code>\nupdate_id: {event.update.update_id}",
+            )
+        except Exception:
+            pass
+        return True
+
     # MUHIM: search.router oxirida bo'lishi kerak!
     # Chunki catch_any_text handler bor — boshqa handlerlar birinchi ishlashi shart.
     dp.include_router(admin.router)
@@ -58,7 +90,14 @@ def run_webhook():
     async def on_startup(_):
         init_db()
         init_episodes()
-        await bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True)
+        # MUHIM: drop_pending_updates=False.
+        # Render Free plan harakatsizlikdan keyin dyno'ni "uxlatib qo'yadi".
+        # Foydalanuvchi shu vaqtda /start deeplink (masalan /start movie_XXXX)
+        # yuborsa, Telegram uni navbatga qo'yadi. Dyno uyg'onganda
+        # drop_pending_updates=True bo'lsa, aynan shu navbatdagi xabarlar
+        # (jumladan deeplink) butunlay o'chirilib yuborilardi — bu deeplink
+        # "ishlamasligi"ning asosiy sababi edi.
+        await bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=False)
         asyncio.create_task(scheduler_loop(bot))
         logger.info(f"✅ Webhook: {WEBHOOK_URL}")
 
