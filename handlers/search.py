@@ -9,7 +9,9 @@ from config import (DB_GROUP_ID, TOPIC_ERRORS, TOPIC_USERS, REQUIRED_CHANNEL_URL
 from utils.helpers import format_movie_card, get_plan_until, get_lang, format_limit_text, days_left
 from utils.keyboards import (main_menu, extra_menu, back_main, search_menu, media_type_keyboard,
                               movies_list_keyboard, movie_card_keyboard, plans_keyboard,
-                              limit_over_keyboard, episode_list_keyboard, language_keyboard)
+                              limit_over_keyboard, episode_list_keyboard, language_keyboard,
+                              movie_video_keyboard, movie_rating_keyboard, movie_rated_keyboard,
+                              movie_actions_keyboard)
 from locales import t
 from datetime import date
 
@@ -407,9 +409,14 @@ async def _send_movie_by_code(message: Message, bot: Bot, code: str, episode_num
     else:
         msg_id = movie["message_id"]
 
-    # Yuborish
+    # Yuborish — kartochka endi videoning caption'i sifatida, bitta xabarda
+    card = format_movie_card(dict(movie), episode_num, lang, for_caption=True)
+    video_markup = movie_video_keyboard(movie["id"], episode_num, total_ep)
     try:
-        await bot.copy_message(message.chat.id, DB_GROUP_ID, msg_id)
+        await bot.copy_message(
+            message.chat.id, DB_GROUP_ID, msg_id,
+            caption=card, parse_mode="HTML", reply_markup=video_markup
+        )
     except Exception as e:
         await message.answer("❌ Kino yuborishda xato. Qayta urining.")
         try:
@@ -427,15 +434,10 @@ async def _send_movie_by_code(message: Message, bot: Bot, code: str, episode_num
     new_limit = db.get_daily_limit(user)
     is_fav = db.is_favorite(user_id, movie["id"])
     is_adm = db.is_admin(user_id)
-    card = format_movie_card(dict(movie), episode_num, lang)
-    markup = movie_card_keyboard(
-        movie["id"], movie["code"], lang, is_fav, is_adm,
-        episode_num, total_ep, movie.get("topic_id")
-    )
-    await message.answer(card, reply_markup=markup, parse_mode="HTML")
+    actions_markup = movie_actions_keyboard(movie["id"], lang, is_fav, is_adm)
     await message.answer(
         f"📥 <b>{int(movie['downloads'])+1}</b> marta  |  Qoldi: <b>{format_limit_text(new_limit)}</b>",
-        parse_mode="HTML"
+        reply_markup=actions_markup, parse_mode="HTML"
     )
 
 
@@ -482,8 +484,13 @@ async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_nu
         if ep:
             msg_id = ep["message_id"]
 
+    card = format_movie_card(dict(movie), episode_num, lang, for_caption=True)
+    video_markup = movie_video_keyboard(movie["id"], episode_num, total_ep)
     try:
-        await bot.copy_message(cb.message.chat.id, DB_GROUP_ID, msg_id)
+        await bot.copy_message(
+            cb.message.chat.id, DB_GROUP_ID, msg_id,
+            caption=card, parse_mode="HTML", reply_markup=video_markup
+        )
     except Exception:
         await cb.answer("❌ Xato yuz berdi", show_alert=True)
         return
@@ -496,15 +503,10 @@ async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_nu
     new_limit = db.get_daily_limit(user)
     is_fav = db.is_favorite(user_id, movie["id"])
     is_adm = db.is_admin(user_id)
-    card = format_movie_card(dict(movie), episode_num, lang)
-    markup = movie_card_keyboard(
-        movie["id"], movie["code"], lang, is_fav, is_adm,
-        episode_num, total_ep, movie.get("topic_id")
-    )
-    await cb.message.answer(card, reply_markup=markup, parse_mode="HTML")
+    actions_markup = movie_actions_keyboard(movie["id"], lang, is_fav, is_adm)
     await cb.message.answer(
         f"📥 <b>{int(movie['downloads'])+1}</b> marta  |  Qoldi: <b>{format_limit_text(new_limit)}</b>",
-        parse_mode="HTML"
+        reply_markup=actions_markup, parse_mode="HTML"
     )
     await cb.answer()
 
@@ -720,13 +722,49 @@ async def _show_trending_msg(message, lang):
 
 # ── Reyting ───────────────────────────────────────────
 
+@router.callback_query(F.data.startswith("rate_open_"))
+async def rate_open(cb: CallbackQuery):
+    parts = cb.data.replace("rate_open_", "").split("_")
+    movie_id = int(parts[0])
+    episode_num = int(parts[1]) if len(parts) > 1 else 1
+    total_episodes = int(parts[2]) if len(parts) > 2 else 1
+    try:
+        await cb.message.edit_reply_markup(
+            reply_markup=movie_rating_keyboard(movie_id, episode_num, total_episodes)
+        )
+    except Exception:
+        pass
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("rate_cancel_"))
+async def rate_cancel(cb: CallbackQuery):
+    parts = cb.data.replace("rate_cancel_", "").split("_")
+    movie_id = int(parts[0])
+    episode_num = int(parts[1]) if len(parts) > 1 else 1
+    total_episodes = int(parts[2]) if len(parts) > 2 else 1
+    try:
+        await cb.message.edit_reply_markup(
+            reply_markup=movie_video_keyboard(movie_id, episode_num, total_episodes)
+        )
+    except Exception:
+        pass
+    await cb.answer()
+
 @router.callback_query(F.data.startswith("dorat_"))
 async def do_rate(cb: CallbackQuery):
     parts = cb.data.replace("dorat_", "").split("_")
     if len(parts) < 2:
         return await cb.answer()
     movie_id, rating = int(parts[0]), int(parts[1])
+    episode_num = int(parts[2]) if len(parts) > 2 else 1
+    total_episodes = int(parts[3]) if len(parts) > 3 else 1
     db.add_rating(cb.from_user.id, movie_id, rating)
+    try:
+        await cb.message.edit_reply_markup(
+            reply_markup=movie_rated_keyboard(movie_id, episode_num, total_episodes)
+        )
+    except Exception:
+        pass
     await cb.answer(f"Bahoyingiz: {'⭐' * rating}", show_alert=True)
 
 # ── Izoh ─────────────────────────────────────────────

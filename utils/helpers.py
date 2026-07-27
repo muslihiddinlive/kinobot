@@ -19,8 +19,12 @@ def is_plan_active(plan, until):
 def status_emoji(status: str) -> str:
     return {"completed": "✅ Tugallangan", "ongoing": "🔄 Davom etmoqda", "announced": "📢 Tez kunda"}.get(status, "✅")
 
-def format_movie_card(movie, episode_num=1, lang="uz") -> str:
-    """Chiroyli kino kartochkasi — hashtagsiz"""
+def format_movie_card(movie, episode_num=1, lang="uz", for_caption=False) -> str:
+    """Chiroyli kino kartochkasi — hashtagsiz
+
+    for_caption=True bo'lsa, tavsif (description) qisqartiriladi —
+    Telegram media caption'lari 1024 belgidan oshsa xato beradi.
+    """
     genre_name = GENRES.get(movie.get("topic_id"), ("🎬 Kino",""))[0]
     ur = float(movie.get("user_rating") or 0)
     rc = int(movie.get("rating_count") or 0)
@@ -70,7 +74,10 @@ def format_movie_card(movie, episode_num=1, lang="uz") -> str:
         lines.append(f"├‣  ⭐  Reyting:   {stars} {ur:.1f}/5  ({rc} ovoz)")
     lines.append("╰─────────────────────")
     if movie.get("description"):
-        lines.append(f"\n📝  <i>{movie['description']}</i>")
+        desc = movie["description"]
+        if for_caption and len(desc) > 250:
+            desc = desc[:250].rsplit(" ", 1)[0] + "…"
+        lines.append(f"\n📝  <i>{desc}</i>")
     lines.append(f"\n📥  <b>{movie.get('downloads',0)}</b> marta tomosha qilindi")
     return "\n".join([l for l in lines if l != ""])
 

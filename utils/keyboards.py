@@ -79,6 +79,74 @@ def movies_list_keyboard(movies, lang="uz", back_cb="browse_media") -> InlineKey
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def _episode_nav_row(movie_id, episode_num, total_episodes):
+    if total_episodes <= 1:
+        return None
+    nav = []
+    if episode_num > 1:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"ep_{movie_id}_{episode_num-1}"))
+    nav.append(InlineKeyboardButton(text=f"📋 {episode_num}/{total_episodes}", callback_data=f"ep_list_{movie_id}"))
+    if episode_num < total_episodes:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"ep_{movie_id}_{episode_num+1}"))
+    return nav
+
+
+def movie_video_keyboard(movie_id, episode_num=1, total_episodes=1) -> InlineKeyboardMarkup:
+    """Video xabarining (caption) o'ziga biriktiriladigan tugmalar:
+    qism navigatsiyasi + bitta "⭐ Baholash" tugmasi (Google Play uslubi —
+    bosilgandan keyingina 5 ta yulduz ochiladi)."""
+    buttons = []
+    nav = _episode_nav_row(movie_id, episode_num, total_episodes)
+    if nav: buttons.append(nav)
+    buttons.append([InlineKeyboardButton(text="⭐ Baholash", callback_data=f"rate_open_{movie_id}_{episode_num}_{total_episodes}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def movie_rating_keyboard(movie_id, episode_num=1, total_episodes=1) -> InlineKeyboardMarkup:
+    """"⭐ Baholash" bosilgandan keyin ko'rinadigan 5 yulduzli tanlov."""
+    buttons = []
+    nav = _episode_nav_row(movie_id, episode_num, total_episodes)
+    if nav: buttons.append(nav)
+    buttons.append([
+        InlineKeyboardButton(text="⭐1", callback_data=f"dorat_{movie_id}_1_{episode_num}_{total_episodes}"),
+        InlineKeyboardButton(text="⭐2", callback_data=f"dorat_{movie_id}_2_{episode_num}_{total_episodes}"),
+        InlineKeyboardButton(text="⭐3", callback_data=f"dorat_{movie_id}_3_{episode_num}_{total_episodes}"),
+        InlineKeyboardButton(text="⭐4", callback_data=f"dorat_{movie_id}_4_{episode_num}_{total_episodes}"),
+        InlineKeyboardButton(text="⭐5", callback_data=f"dorat_{movie_id}_5_{episode_num}_{total_episodes}"),
+    ])
+    buttons.append([InlineKeyboardButton(text="🔙 Bekor qilish", callback_data=f"rate_cancel_{movie_id}_{episode_num}_{total_episodes}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def movie_rated_keyboard(movie_id, episode_num=1, total_episodes=1) -> InlineKeyboardMarkup:
+    """Baho tanlangandan keyin — izoh yozish taklifi (Google Play uslubi)."""
+    buttons = []
+    nav = _episode_nav_row(movie_id, episode_num, total_episodes)
+    if nav: buttons.append(nav)
+    buttons.append([InlineKeyboardButton(text="💬 Izoh yozish", callback_data=f"comment_{movie_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def movie_actions_keyboard(movie_id, lang="uz", is_favorite=False, is_admin=False) -> InlineKeyboardMarkup:
+    """Video xabaridan keyin ALOHIDA xabar sifatida yuboriladigan tugmalar:
+    sevimlilar, kanal, bosh sahifa (va admin bo'lsa — boshqaruv tugmalari)."""
+    buttons = []
+    if is_admin:
+        buttons.append([
+            InlineKeyboardButton(text="✏️ Tahrir", callback_data=f"edit_movie_{movie_id}"),
+            InlineKeyboardButton(text="➕ Qism qo'sh", callback_data=f"add_ep_{movie_id}"),
+            InlineKeyboardButton(text="🗑 O'chir", callback_data=f"delete_movie_{movie_id}"),
+        ])
+    fav_text = "💔 Olib tashlash" if is_favorite else "❤️ Sevimlilarga"
+    fav_data = f"unfav_{movie_id}" if is_favorite else f"fav_{movie_id}"
+    buttons.append([
+        InlineKeyboardButton(text=fav_text, callback_data=fav_data),
+        InlineKeyboardButton(text="📢 Kanalda ko'rish", url=REQUIRED_CHANNEL_URL),
+    ])
+    buttons.append([InlineKeyboardButton(text=t("home",lang), callback_data="back_main")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def movie_card_keyboard(movie_id, code, lang="uz", is_favorite=False,
                         is_admin=False, episode_num=1, total_episodes=1, topic_id=None):
     """Kino karta — navigatsiya + reyting"""
