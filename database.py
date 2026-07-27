@@ -19,16 +19,20 @@ def get_conn():
     # xatosi bilan yiqilib tushmasdan, 10 soniyagacha kutadi.
     c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = sqlite3.Row
-    # WAL rejimi: o'qish va yozish bir-birini bloklamaydi (default rollback
-    # journal rejimida esa har bir yozish butun faylni qulflab qo'yardi —
-    # bir nechta foydalanuvchi bir vaqtda tugma bosganda ana shu "qotib
-    # qolish"larning asosiy sababi shu edi).
-    c.execute("PRAGMA journal_mode=WAL")
+    # DIQQAT: journal_mode=WAL shu yerda HAR bir ulanishda qayta
+    # o'rnatilmaydi — buni bir marta init_db() ichida qilamiz. Har bir
+    # admin amali (masalan statistika) ketma-ket bir nechta ulanish ochadi;
+    # har birida qayta PRAGMA journal_mode tekshiruvi Render diskida
+    # sezilarli sekinlik qo'shib, aynan admin panelni "kech javob
+    # berayotgandek" qilib qo'ygan edi.
     c.execute("PRAGMA busy_timeout=10000")
     return c
 
 def init_db():
-    conn = get_conn(); c = conn.cursor()
+    conn = get_conn()
+    # WAL rejimi shu yerda, faqat bir marta, bot ishga tushganda o'rnatiladi.
+    conn.execute("PRAGMA journal_mode=WAL")
+    c = conn.cursor()
 
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id         INTEGER PRIMARY KEY,
