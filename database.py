@@ -14,11 +14,31 @@ if _db_dir and not os.path.exists(_db_dir):
     except Exception:
         pass
 
+
+class DictRow(sqlite3.Row):
+    """sqlite3.Row + .get() metodi.
+
+    MUHIM: butun loyihada (utils/helpers.py, handlers/search.py,
+    handlers/movies.py, utils/keyboards.py) ko'plab joyda
+    `movie.get("...")` kabi chaqiriqlar bor edi. Oddiy sqlite3.Row
+    bunday metodni qo'llab-quvvatlamaydi va shu joylarda
+    `'sqlite3.Row' object has no attribute 'get'` xatosi bilan yiqilib
+    tushardi. Aynan shu — tugmalarning "sababsiz, har xil" qotib
+    qolishining asosiy manbai edi. Endi bitta joyda tuzatildi.
+    """
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except (IndexError, KeyError):
+            return default
+
+
 def get_conn():
     # timeout=10: agar fayl vaqtincha band bo'lsa, darrov "database is locked"
     # xatosi bilan yiqilib tushmasdan, 10 soniyagacha kutadi.
     c = sqlite3.connect(DB_PATH, timeout=10)
-    c.row_factory = sqlite3.Row
+    c.row_factory = DictRow
     # DIQQAT: journal_mode=WAL shu yerda HAR bir ulanishda qayta
     # o'rnatilmaydi — buni bir marta init_db() ichida qilamiz. Har bir
     # admin amali (masalan statistika) ketma-ket bir nechta ulanish ochadi;
