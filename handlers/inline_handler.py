@@ -5,6 +5,7 @@ from aiogram.types import (InlineQuery, InlineQueryResultArticle,
 import database as db
 from utils.helpers import format_movie_info, get_lang
 from config import TOPIC_VIP_CLUB
+from datetime import date
 import hashlib
 
 router = Router()
@@ -16,6 +17,7 @@ async def inline_search(query: InlineQuery, bot: Bot):
     lang = get_lang(user_id)
     user = db.get_user(user_id)
     results = []
+    today = str(date.today())
 
     if not text:
         # Bo'sh qidiruv — trending kinolar
@@ -24,9 +26,17 @@ async def inline_search(query: InlineQuery, bot: Bot):
         movies = db.search_movies(text)
 
     for movie in movies[:15]:
-        # VIP kinoni faqat VIP userlar ko'radi
+        # VIP kinoni faqat MUDDATI TUGAMAGAN VIP userlar ko'radi.
+        # --- FIX: ilgari faqat user["plan"]=="vip" tekshirilardi,
+        # plan_until (muddat) tekshirilmasdi. Natijada VIP muddati
+        # tugagan (lekin DB'da hali "lazy downgrade" bo'lmagan)
+        # foydalanuvchi inline qidiruv orqali VIP kinolarni ko'rishda
+        # davom etardi — search.py va vip.py'dagi to'g'ri tekshiruvdan
+        # farqli o'laroq.
         if movie["topic_id"] == TOPIC_VIP_CLUB:
-            if not user or user["plan"] != "vip":
+            is_vip = (user and user["plan"] == "vip" and
+                      user["plan_until"] and user["plan_until"] >= today)
+            if not is_vip and not db.is_admin(user_id):
                 continue
 
         info = format_movie_info(dict(movie), lang, show_tags=False)

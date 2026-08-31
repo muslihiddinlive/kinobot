@@ -441,8 +441,14 @@ async def _send_movie_by_code(message: Message, bot: Bot, code: str, episode_num
     )
 
 
-async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_num: int = 1):
-    """Callback dan kino yuborish"""
+async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_num: int = 1, is_navigation: bool = False):
+    """Callback dan kino yuborish.
+
+    is_navigation=True: bu chaqiriq foydalanuvchi ALLAQACHON ochgan serialning
+    boshqa qismiga o'tishi (◀️/▶️ tugmalari). Bu holda kunlik limit QAYTA
+    SARFLANMAYDI — foydalanuvchi bitta serialni tomosha qilib, uning har bir
+    qismini almashtirganda kunlik limitini yeb qo'ymasligi kerak.
+    """
     user_id = cb.from_user.id
     lang = get_lang(user_id)
 
@@ -455,14 +461,22 @@ async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_nu
         await cb.answer(t("banned_message", lang), show_alert=True)
         return
 
-    limit = db.get_daily_limit(user)
-    if limit <= 0:
-        await cb.answer(t("search_limit_over", lang), show_alert=True)
-        await cb.message.answer(
-            f"⛔ {t('search_limit_over', lang)}",
-            reply_markup=limit_over_keyboard(lang)
-        )
-        return
+    # --- FIX (muhim): ilgari bu yerda limit HAR DOIM tekshirilib,
+    # keyinroq db.use_one_limit() bilan HAR DOIM sarflanardi — hatto
+    # foydalanuvchi allaqachon ochgan serialning qismini almashtirsa ham
+    # (ep_navigate orqali). Natijada 10 qismli serialni tomosha qilish
+    # kunlik 5 talik limitni bir necha qismda tugatib qo'yardi. Endi
+    # is_navigation=True bo'lsa, limit tekshiruvi VA sarflash o'tkazib
+    # yuboriladi.
+    if not is_navigation:
+        limit = db.get_daily_limit(user)
+        if limit <= 0:
+            await cb.answer(t("search_limit_over", lang), show_alert=True)
+            await cb.message.answer(
+                f"⛔ {t('search_limit_over', lang)}",
+                reply_markup=limit_over_keyboard(lang)
+            )
+            return
 
     movie = db.get_movie_by_code(code.upper())
     if not movie:
@@ -495,7 +509,10 @@ async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_nu
         await cb.answer("❌ Xato yuz berdi", show_alert=True)
         return
 
-    db.use_one_limit(user_id)
+    # --- FIX (davomi): navigatsiya bo'lsa, limit sarflanmaydi — faqat
+    # ko'rishlar statistikasi (downloads) va qidiruv logi yangilanadi.
+    if not is_navigation:
+        db.use_one_limit(user_id)
     db.increment_downloads(movie["id"])
     db.log_search(user_id, code, True)
 
@@ -631,7 +648,7 @@ async def ep_navigate(cb: CallbackQuery, bot: Bot):
     conn.close()
     if not row:
         return await cb.answer("Kino topilmadi", show_alert=True)
-    await _send_movie_from_cb(cb, bot, row["code"], ep_num)
+    await _send_movie_from_cb(cb, bot, row["code"], ep_num, is_navigation=True)
 
 # ── Media tur ─────────────────────────────────────────
 
@@ -881,7 +898,7 @@ async def extra_menu_cb(cb: CallbackQuery):
 @router.callback_query(F.data == "set_language")
 async def lang_cb(cb: CallbackQuery):
     lang = get_lang(cb.from_user.id)
-    await cb.message.edit_text(t("language_title", lang), reply_markup=language_keyboard())
+    await cb.message.edit_text(t("language_title", lang), reply_markup=language_keyboard(lang))
     await cb.answer()
 
 @router.callback_query(F.data.startswith("lang_"))

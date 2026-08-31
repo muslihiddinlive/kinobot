@@ -155,7 +155,14 @@ async def bc_send_now(cb: CallbackQuery, state: FSMContext, bot: Bot):
         chats = []
     else:
         users = db.get_users_by_plan(target_type)
-        chats = db.get_bot_chats(exclude_db=True)
+        # --- FIX (muhim): ilgari bu yerda bot_chats (guruh/kanallar) HAR
+        # QANDAY target_type uchun (shu jumladan "vip", "pro", "free" —
+        # ya'ni tor segmentlar uchun ham) qo'shilardi. Natijada "Faqat VIP"
+        # yoki "Faqat Free" deb tanlangan "maqsadli" reklama baribir
+        # botning a'zo bo'lgan BARCHA guruh/kanallariga ham yuborilardi —
+        # bu "maqsadli" bo'lish g'oyasini butunlay buzardi. Endi guruh/
+        # kanallarga faqat haqiqatan "Hammaga" (all) tanlanganda yuboriladi.
+        chats = db.get_bot_chats(exclude_db=True) if target_type == "all" else []
 
     all_targets = list(users) + [c["chat_id"] for c in chats]
     sent = failed = 0

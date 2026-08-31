@@ -341,7 +341,14 @@ async def add_media(message: Message, state: FSMContext, bot: Bot):
         db.init_episodes()
         start_ep = data.get("start_ep", 1)
         db.add_episode(movie["id"], start_ep, sent.message_id, tid)
-        db.update_movie(movie["id"], total_episodes=start_ep)
+        # --- FIX: bu yerda db.update_movie(total_episodes=start_ep) chaqirilardi —
+        # bu add_episode() ICHIDA allaqachon to'g'ri hisoblangan (haqiqiy episodes
+        # qatorlar soniga teng) total_episodes qiymatini START_EP bilan (masalan
+        # admin "5-qismdan boshlayman" desa — 5 bilan) QAYTA YOZIB, buzib
+        # qo'yardi. Natijada faqat 1 ta qism DB'da bo'lsa ham total_episodes=5
+        # bo'lib qolar, foydalanuvchi kino so'rasa "qism topilmadi" xatosi
+        # chiqardi. add_episode() total_episodes'ni o'zi to'g'ri boshqaradi —
+        # bu yerda qayta yozish kerak emas.
         db.audit(message.from_user.id, "add_movie", data["code"], data["title"])
 
         # Admin uchun kino kartasi
@@ -349,7 +356,11 @@ async def add_media(message: Message, state: FSMContext, bot: Bot):
         await state.update_data(movie_id=movie["id"], bot_username=bot_info.username)
         await state.set_state(AddMovieState.ask_channel)
 
-        # Admin uchun preview
+        # Admin uchun preview — FIX: add_episode() dan keyingi ANIQ (haqiqiy)
+        # total_episodes qiymatini ko'rsatish uchun kinoni qayta o'qiymiz,
+        # eskirgan (add_episode()dan OLDIN olingan) `movie` obyektiga
+        # tayanmaymiz.
+        movie = db.get_movie_by_code(data["code"])
         card = format_movie_card(dict(movie), 1)
         await message.answer(
             f"✅ <b>Kino qo'shildi!</b>\n\n{card}",

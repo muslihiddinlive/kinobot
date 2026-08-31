@@ -14,7 +14,12 @@ class AntiFloodMiddleware(BaseMiddleware):
         from config import SUPERADMIN_ID, ADMIN_IDS
         if isinstance(event, Message):
             uid = event.from_user.id
-            if uid in ADMIN_IDS or uid == SUPERADMIN_ID:
+            # --- FIX: /admin panel orqali qo'shilgan (faqat DB'da saqlanadigan)
+            # adminlar bu yerda tekshirilmasdi — ular ham oddiy foydalanuvchi
+            # kabi flood-limitga tushib qolardi (masalan bir nechta kino/qismni
+            # ketma-ket tez qo'shayotganda). Endi db.is_admin() qo'shildi.
+            import database as db
+            if uid in ADMIN_IDS or uid == SUPERADMIN_ID or db.is_admin(uid):
                 return await handler(event, data)
             now = datetime.now().timestamp()
             times = [t for t in user_times[uid] if now - t < self.per]

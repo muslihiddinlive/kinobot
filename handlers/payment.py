@@ -96,6 +96,19 @@ def _grant(user_id: int, payload: str, stars: int):
 async def approve_pay(cb: CallbackQuery, bot: Bot):
     if not db.is_admin(cb.from_user.id):
         return await cb.answer("⛔ Sizda ruxsat yo'q", show_alert=True)
+
+    # --- FIX (kritik): ikki marta bosilishdan himoya ---
+    # Ilgari bu yerda faqat matn (edit_text) o'zgartirilardi, tugmalar
+    # (reply_markup) esa xabarda qolib ketardi. Natijada admin ikki marta
+    # bossa (yoki tarmoq sekinligida ikki marta yuborilsa) _grant()
+    # ikki marta chaqirilib, foydalanuvchiga tarif/limit IKKI MARTA
+    # berilishi mumkin edi. Endi: 1) allaqachon tasdiqlangan/rad etilgan
+    # xabar matnida belgi bo'lsa — darhol to'xtaymiz; 2) muvaffaqiyatli
+    # ishlov berilgach, tugmalarni butunlay olib tashlaymiz.
+    current_text = cb.message.html_text or ""
+    if "✅ <b>Tasdiqlandi</b>" in current_text or "❌ <b>Rad etildi</b>" in current_text:
+        return await cb.answer("Bu so'rov allaqachon ko'rib chiqilgan.", show_alert=True)
+
     _, user_id_s, payload = cb.data.split(":", 2)
     user_id = int(user_id_s)
     title, stars = PLAN_TITLES.get(payload, (payload, 0))
@@ -115,8 +128,9 @@ async def approve_pay(cb: CallbackQuery, bot: Bot):
         pass
     try:
         await cb.message.edit_text(
-            cb.message.html_text + f"\n\n✅ <b>Tasdiqlandi</b> (@{cb.from_user.username or cb.from_user.id})",
-            parse_mode="HTML"
+            current_text + f"\n\n✅ <b>Tasdiqlandi</b> (@{cb.from_user.username or cb.from_user.id})",
+            parse_mode="HTML",
+            reply_markup=None,  # --- FIX: tugmalarni olib tashlaymiz, qayta bosilmasin ---
         )
     except Exception:
         pass
@@ -127,6 +141,12 @@ async def approve_pay(cb: CallbackQuery, bot: Bot):
 async def decline_pay(cb: CallbackQuery, bot: Bot):
     if not db.is_admin(cb.from_user.id):
         return await cb.answer("⛔ Sizda ruxsat yo'q", show_alert=True)
+
+    # --- FIX (kritik): xuddi shu ikki-marta-bosish himoyasi ---
+    current_text = cb.message.html_text or ""
+    if "✅ <b>Tasdiqlandi</b>" in current_text or "❌ <b>Rad etildi</b>" in current_text:
+        return await cb.answer("Bu so'rov allaqachon ko'rib chiqilgan.", show_alert=True)
+
     _, user_id_s, payload = cb.data.split(":", 2)
     user_id = int(user_id_s)
     try:
@@ -137,8 +157,9 @@ async def decline_pay(cb: CallbackQuery, bot: Bot):
         pass
     try:
         await cb.message.edit_text(
-            cb.message.html_text + f"\n\n❌ <b>Rad etildi</b> (@{cb.from_user.username or cb.from_user.id})",
-            parse_mode="HTML"
+            current_text + f"\n\n❌ <b>Rad etildi</b> (@{cb.from_user.username or cb.from_user.id})",
+            parse_mode="HTML",
+            reply_markup=None,  # --- FIX: tugmalarni olib tashlaymiz ---
         )
     except Exception:
         pass

@@ -26,7 +26,7 @@ async def vip_club_menu(cb: CallbackQuery, bot: Bot):
             "👑 <b>VIP Club</b>\n\n"
             "🔒 Bu bo'lim faqat VIP a'zolar uchun!\n\n"
             "VIP olish uchun:\n"
-            "⭐ 100 yulduz → 6 oylik cheksiz kino + VIP Club kirish",
+            "⭐ 100 yulduz → 3 oylik cheksiz kino + VIP Club kirish",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="👑 VIP olish — ⭐100", callback_data="buy_vip_3m")],
                 [InlineKeyboardButton(text=t("back", lang), callback_data="back_main")],

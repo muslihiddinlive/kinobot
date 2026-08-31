@@ -106,10 +106,23 @@ async def process_scheduled_broadcasts(bot):
 
             if target_type.startswith("lang_"):
                 users = db.get_users_by_lang(target_type.replace("lang_",""))
+                chats = []
+            elif target_type == "admins":
+                from config import ADMIN_IDS, SUPERADMIN_ID
+                users = list(set(ADMIN_IDS + [SUPERADMIN_ID] + [a["user_id"] for a in db.get_all_admins()]))
+                chats = []
+            elif target_type.startswith("specific_"):
+                users = [int(target_type.replace("specific_", ""))]
+                chats = []
             else:
                 users = db.get_users_by_plan(target_type)
+                # --- FIX (muhim, bc_send_now bilan bir xil xato):
+                # ilgari bu yerda barcha bot_chats (guruh/kanallar)
+                # target_type "vip"/"pro"/"free" bo'lganda ham qo'shilardi —
+                # rejalashtirilgan "faqat VIP" reklama ham hamma guruhga
+                # chiqib ketardi. Endi faqat "all" uchun qo'shiladi.
+                chats = db.get_bot_chats(exclude_db=True) if target_type == "all" else []
 
-            chats = db.get_bot_chats(exclude_db=True)
             all_targets = list(users) + [c["chat_id"] for c in chats]
 
             sent = failed = 0

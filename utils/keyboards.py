@@ -231,7 +231,12 @@ def limit_over_keyboard(lang="uz") -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=t("home",lang), callback_data="back_main")],
     ])
 
-def language_keyboard() -> InlineKeyboardMarkup:
+def language_keyboard(lang="uz") -> InlineKeyboardMarkup:
+    # --- FIX (kritik): ilgari `lang` parametri funksiyaga umuman
+    # berilmagan, lekin pastda t("home", lang) da ishlatilgan edi —
+    # bu har chaqirilganda NameError bilan yiqilardi (til tanlash
+    # menyusi umuman ishlamas edi). Endi lang parametr sifatida
+    # qabul qilinadi, sukut bo'yicha "uz".
     buttons = [[InlineKeyboardButton(text=name, callback_data=f"lang_{code}")] for name,code in LANG_BUTTONS]
     buttons.append([InlineKeyboardButton(text=t("home",lang), callback_data="back_main")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
