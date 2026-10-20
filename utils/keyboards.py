@@ -268,26 +268,64 @@ def admin_menu() -> InlineKeyboardMarkup:
          InlineKeyboardButton(text="🔍 Dublikat", callback_data="adm_duplicates")],
         [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="adm_settings"),
          InlineKeyboardButton(text="📋 Audit", callback_data="adm_audit")],
+        [InlineKeyboardButton(text="👑 Superadmin", callback_data="sa_menu")],
     ])
+
+# ── Umumiy UI yordamchilari ───────────────────────────
+def grid(buttons, per_row: int = 2, long_len: int = 16):
+    """Inline tugmalarni 2 ustunli setkaga joylaydi.
+    Nomi uzun (long_len dan katta) tugma setkani buzmasligi uchun alohida,
+    to'liq kenglikdagi qatorga tushadi."""
+    rows, cur = [], []
+    for b in buttons:
+        if len(b.text) > long_len:
+            if cur:
+                rows.append(cur); cur = []
+            rows.append([b]); continue
+        cur.append(b)
+        if len(cur) == per_row:
+            rows.append(cur); cur = []
+    if cur:
+        rows.append(cur)
+    return rows
+
+def page_nav(page: int, pages: int, prefix: str):
+    """◀️ aynan bitta sahifa orqaga qaytaradi (boshiga emas). ⏮/⏭ faqat uzoq sahifalarda."""
+    if pages <= 1:
+        return []
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton(text="⏮", callback_data=f"{prefix}0"))
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"{prefix}{page-1}"))
+    nav.append(InlineKeyboardButton(text=f"{page+1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"{prefix}{page+1}"))
+    if page < pages - 2:
+        nav.append(InlineKeyboardButton(text="⏭", callback_data=f"{prefix}{pages-1}"))
+    return nav
+
+def user_button(u, cb_prefix: str = "adm_user_") -> InlineKeyboardButton:
+    badge = "👑" if u["plan"] == "vip" else ("💎" if u["plan"] == "pro" else ("🚫" if u["is_banned"] else "🆓"))
+    name = (u["full_name"] or u["username"] or str(u["user_id"]))
+    if len(name) > 20:
+        name = name[:19] + "…"
+    return InlineKeyboardButton(text=f"{badge} {name}", callback_data=f"{cb_prefix}{u['user_id']}")
+
+PAGE_SIZE = 10
 
 def users_page_keyboard(users, page, total, lang="uz") -> InlineKeyboardMarkup:
-    buttons = []
-    for u in users:
-        badge = "👑" if u["plan"]=="vip" else ("💎" if u["plan"]=="pro" else ("🚫" if u["is_banned"] else "🆓"))
-        name = (u["full_name"] or u["username"] or str(u["user_id"]))[:22]
-        buttons.append([InlineKeyboardButton(text=f"{badge} {name}", callback_data=f"adm_user_{u['user_id']}")])
-    nav = []
-    if page > 0: nav.append(InlineKeyboardButton(text="◀️", callback_data=f"users_page_{page-1}"))
-    nav.append(InlineKeyboardButton(text=f"{page+1}/{(total-1)//10+1}", callback_data="noop"))
-    if (page+1)*10 < total: nav.append(InlineKeyboardButton(text="▶️", callback_data=f"users_page_{page+1}"))
-    if nav: buttons.append(nav)
-    buttons.append([
-        InlineKeyboardButton(text="🔍 Qidirish", callback_data="adm_user_lookup"),
-        InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")
-    ])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    rows = grid([user_button(u) for u in users])
+    pages = max(1, (total - 1) // PAGE_SIZE + 1)
+    nav = page_nav(page, pages, "users_page_")
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="🔍 ID / ism / @", callback_data="adm_user_lookup"),
+                 InlineKeyboardButton(text="🔤 Harf bilan", callback_data="lq_start")])
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def user_actions_keyboard(user_id) -> InlineKeyboardMarkup:
+def user_actions_keyboard(user_id, back_cb: str = "adm_users") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 Plan", callback_data=f"give_plan_{user_id}"),
          InlineKeyboardButton(text="➕ Limit", callback_data=f"give_limit_{user_id}"),
@@ -295,8 +333,39 @@ def user_actions_keyboard(user_id) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📨 Xabar", callback_data=f"msg_user_{user_id}"),
          InlineKeyboardButton(text="🚫 Ban", callback_data=f"ban_{user_id}"),
          InlineKeyboardButton(text="✅ Unban", callback_data=f"unban_{user_id}")],
-        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users")],
+        [InlineKeyboardButton(text="🔙 Orqaga", callback_data=back_cb)],
     ])
+
+# ── Harfli qidiruv klaviaturasi (admin: foydalanuvchi izlash) ──
+LETTER_LAYOUTS = {
+    "lat": ["A","B","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","X","Y","Z",
+            "O\u02bb","G\u02bb","Sh","Ch","\u02bc"],
+    "cyr": list("АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯЎҚҒҲ"),
+    "num": list("1234567890") + ["@", "_", ".", "-"],
+}
+_LETTER_PER_ROW = {"lat": 6, "cyr": 7, "num": 5}
+
+def letter_search_keyboard(layout: str, users, total: int) -> InlineKeyboardMarkup:
+    layout = layout if layout in LETTER_LAYOUTS else "lat"
+    rows = grid([user_button(u) for u in users])           # real-time tavsiyalar (tepada)
+    keys = [InlineKeyboardButton(text=k, callback_data=f"lq_k_{k}") for k in LETTER_LAYOUTS[layout]]
+    per = _LETTER_PER_ROW[layout]
+    rows += [keys[i:i + per] for i in range(0, len(keys), per)]
+    mark = lambda name, text: f"• {text}" if layout == name else text
+    rows.append([
+        InlineKeyboardButton(text=mark("lat", "Lotin"), callback_data="lq_l_lat"),
+        InlineKeyboardButton(text=mark("cyr", "Кирилл"), callback_data="lq_l_cyr"),
+        InlineKeyboardButton(text=mark("num", "123 @"), callback_data="lq_l_num"),
+    ])
+    rows.append([InlineKeyboardButton(text="⌫", callback_data="lq_k_BS"),
+                 InlineKeyboardButton(text="␣ bo'sh joy", callback_data="lq_k_SP"),
+                 InlineKeyboardButton(text="✖ Tozalash", callback_data="lq_k_CL")])
+    bottom = []
+    if total > len(users):
+        bottom.append(InlineKeyboardButton(text=f"📋 Hammasi ({total})", callback_data="lqr_0"))
+    bottom.append(InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users"))
+    rows.append(bottom)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def channels_keyboard(channels) -> InlineKeyboardMarkup:
     buttons = []

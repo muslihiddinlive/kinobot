@@ -59,6 +59,32 @@ WEBHOOK_DOMAIN=https://kinobot.onrender.com
 
 ---
 
+## 4️⃣½ DB yo'qolishidan himoya (MUHIM)
+
+Render **Free** rejasida disk vaqtincha: har redeploy/restartda `kinobot.db` o'chadi
+(foydalanuvchilar, VIP, to'lovlar, referal, kino katalogi). Shuning uchun bot DB'ni
+**Telegram'ga zaxiralaydi** va bo'sh diskda **avtomatik tiklaydi**:
+
+1. Alohida **yopiq** guruh yoki kanal yarating (kino bazasi guruhidan boshqa, tavsiya).
+2. Botni u yerda **admin** qiling: xabar yozish, xabarni tahrirlash, **xabarni pin qilish**.
+3. Chat ID sini Render → Environment → `BACKUP_CHAT_ID` ga yozing (bo'sh qolsa `DB_GROUP_ID` ishlatiladi).
+4. `/admin` → **👑 Superadmin** → **💾 Backup** → "Hozir backup" tugmasini bosing, holat `📌 pin qilingan` bo'lsin.
+
+Qanday ishlaydi: har 10 daqiqada (DB o'zgargan bo'lsa) `kinobot.db` gzip qilinib, chatdagi **bitta pin qilingan xabar** tahrirlanadi;
+sutkada bir marta alohida arxiv (oxirgi 7 tasi) saqlanadi. Bot bo'sh diskda ishga tushsa, pin qilingan xabardan DB tiklanadi.
+Backup bor-u tiklab bo'lmasa, bot **ishga tushmaydi** (bo'sh DB bilan ishlab yaxshi backupni ustidan yozib yubormaslik uchun).
+
+Cheklovlar: gzip hajmi 20 MB dan oshmasin (Bot API yuklab olish limiti); redeploy paytidagi oxirgi bir necha daqiqalik o'zgarishlar
+yo'qolishi mumkin (`BACKUP_INTERVAL_MIN` ni kichik qiling). Katta o'sishda tashqi DB (Neon/Turso) ga o'tish tavsiya etiladi.
+
+## 🔐 Webhook xavfsizligi
+
+Token endi URL'da yurmaydi: yo'l `/wh/<maxfiy>` va Telegram har so'rovda `X-Telegram-Bot-Api-Secret-Token` sarlavhasini yuboradi
+(noto'g'ri sarlavha `401`). Maxfiy qiymatlar `BOT_TOKEN` dan (yoki ixtiyoriy `WEBHOOK_SECRET` dan) hosil qilinadi, qo'shimcha sozlash shart emas.
+Deploydan keyin webhook yangi manzilga avtomatik o'rnatiladi.
+
+---
+
 ## 5️⃣ Tekshirish
 
 - `https://kinobot.onrender.com/health` → "OK" chiqishi kerak

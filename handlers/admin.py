@@ -1,11 +1,14 @@
+import html
 from aiogram import Router, F, Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import database as db
 from config import SUPERADMIN_ID, DB_GROUP_ID, TOPIC_ADMIN_LOGS
-from utils.keyboards import admin_menu, users_page_keyboard, user_actions_keyboard, channels_keyboard
+from utils.keyboards import admin_menu, users_page_keyboard, user_actions_keyboard, channels_keyboard, grid, user_button
+from utils import admin_nav
 from utils.helpers import get_plan_until
 
 router = Router()
@@ -86,22 +89,29 @@ async def users_page_cb(cb: CallbackQuery):
 
 async def _show_users_page(message, page):
     total = db.get_users_count()
+    pages = max(1, (total - 1) // 10 + 1)
+    page = max(0, min(page, pages - 1))
     users = db.get_users_page(offset=page*10, limit=10)
+    admin_nav.set_back(message.chat.id, f"users_page_{page}")     # kartadan "Orqaga" shu sahifaga qaytadi
     text = f"👥 <b>Foydalanuvchilar</b> — jami {total} ta\n\nTanlang:"
+    markup = users_page_keyboard(users, page, total)
     try:
-        await message.edit_text(text, reply_markup=users_page_keyboard(users, page, total), parse_mode="HTML")
-    except:
-        await message.answer(text, reply_markup=users_page_keyboard(users, page, total), parse_mode="HTML")
+        await message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except TelegramBadRequest as e:
+        if "not modified" not in str(e).lower():     # xabar o'zgarmagan bo'lsa jim turamiz (takror xabar yo'q)
+            await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
-# User qidirish
+# User qidirish (ID / @username / ism / familiya / bio)
 @router.callback_query(F.data == "adm_user_lookup")
 async def user_lookup_start(cb: CallbackQuery, state: FSMContext):
     if not is_admin(cb.from_user.id): return await cb.answer()
     await state.set_state(AdminState.user_lookup)
     await cb.message.edit_text(
-        "🔍 User ID yoki @username yuboring:",
+        "🔍 User <b>ID</b>, <b>@username</b>, <b>ism/familiya</b> yoki <b>bio</b> dan so'z yuboring:",
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users")]
+            [InlineKeyboardButton(text="🔤 Harf bilan", callback_data="lq_start"),
+             InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users")]
         ])
     )
     await cb.answer()
@@ -109,13 +119,30 @@ async def user_lookup_start(cb: CallbackQuery, state: FSMContext):
 @router.message(AdminState.user_lookup)
 async def user_lookup(message: Message, state: FSMContext):
     await state.clear()
-    q = message.text.strip()
-    user = db.get_user_by_username(q) if q.startswith("@") else db.get_user(int(q)) if q.isdigit() else None
-    if not user:
+    q = (message.text or "").strip()
+    if not q:
+        await message.answer("❌ Matn yuboring.", reply_markup=admin_menu()); return
+    user = None
+    if q.startswith("@"): user = db.get_user_by_username(q)
+    elif q.isdigit(): user = db.get_user(int(q))
+    if user:
+        admin_nav.set_back(message.chat.id, "adm_users")
+        await _show_user_detail(message, user, send=True); return
+    found = db.search_users(q, limit=10)
+    if not found:
         await message.answer("❌ Topilmadi.", reply_markup=admin_menu()); return
-    await _show_user_detail(message, user, send=True)
+    if len(found) == 1:
+        admin_nav.set_back(message.chat.id, "adm_users")
+        await _show_user_detail(message, found[0], send=True); return
+    total = db.count_search_users(q)
+    admin_nav.set_back(message.chat.id, "adm_users")
+    rows = grid([user_button(u) for u in found])
+    rows.append([InlineKeyboardButton(text="🔤 Harf bilan", callback_data="lq_start"),
+                 InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users")])
+    await message.answer(f"🔎 <b>{html.escape(q)}</b>: {total} ta topildi" + (" (dastlabki 10 ta)" if total > 10 else ""),
+                         parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
-@router.callback_query(F.data.startswith("adm_user_"))
+@router.callback_query(F.data.regexp(r"^adm_user_\d+$"))
 async def user_detail(cb: CallbackQuery):
     if not is_admin(cb.from_user.id): return await cb.answer()
     uid = int(cb.data.replace("adm_user_",""))
@@ -137,8 +164,8 @@ async def _show_user_detail(message, user, send=False):
     text = (
         f"👤 <b>Foydalanuvchi</b>\n\n"
         f"🆔 <code>{user['user_id']}</code>\n"
-        f"👋 {user['full_name']}\n"
-        f"📱 @{user['username'] or 'yoq'}\n"
+        f"👋 {html.escape(user['full_name'] or '')}\n"
+        f"📱 @{html.escape(user['username'] or 'yoq')}\n"
         f"🏷 Plan: {badge}"
     )
     if days > 0: text += f" ({days} kun)"
@@ -150,7 +177,10 @@ async def _show_user_detail(message, user, send=False):
         f"🚫 Ban: {'Ha' if user['is_banned'] else 'Yoq'}\n"
         f"📅 Qo'shilgan: {user['joined_at']}\n"
     )
-    markup = user_actions_keyboard(user["user_id"])
+    bio = (user["bio"] if "bio" in user.keys() else None)
+    if bio:
+        text += f"📝 Bio: {html.escape(bio[:200])}\n"
+    markup = user_actions_keyboard(user["user_id"], admin_nav.get_back(message.chat.id))
     if send:
         await message.answer(text, reply_markup=markup, parse_mode="HTML")
     else:

@@ -34,11 +34,28 @@ class DictRow(sqlite3.Row):
             return default
 
 
+_APOS = str.maketrans({"\u02bb": "'", "\u02bc": "'", "\u2019": "'", "\u2018": "'", "`": "'", "\u00b4": "'"})
+
+def _cf(s):
+    """Qidiruv uchun normallashtirish: casefold + apostrof variantlari."""
+    return s.casefold().translate(_APOS) if isinstance(s, str) else ""
+
+def norm_query(q: str) -> str:
+    return _cf((q or "").strip().lstrip("@"))
+
+def _like(q: str) -> str:
+    """LIKE uchun xavfsiz '%q%' (% _ \\ belgilarini ekranlaydi)."""
+    q = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{q}%"
+
 def get_conn():
     # timeout=10: agar fayl vaqtincha band bo'lsa, darrov "database is locked"
     # xatosi bilan yiqilib tushmasdan, 10 soniyagacha kutadi.
     c = sqlite3.connect(DB_PATH, timeout=10)
     c.row_factory = DictRow
+    # Unicode (kirill/lotin) ga mos kichik-harf qidiruv uchun: SQLite'ning
+    # lower() faqat ASCII'ni tushunadi. Apostrof variantlari ham tenglashtiriladi.
+    c.create_function("cf", 1, _cf, deterministic=True)
     # DIQQAT: journal_mode=WAL shu yerda HAR bir ulanishda qayta
     # o'rnatilmaydi — buni bir marta init_db() ichida qilamiz. Har bir
     # admin amali (masalan statistika) ketma-ket bir nechta ulanish ochadi;
@@ -123,6 +140,8 @@ def init_db():
         ("welcome_text","🎬 Kino Botga xush kelibsiz!"),
         ("referral_points_for_pro","10"),
         ("weekly_report_chat",""), ("scheduled_broadcast",""),
+        # Guruhlarda admin xabarlariga avto-reaksiya (emoji, bo'sh = o'chiq)
+        ("react_super","🔥"), ("react_admin","👍"), ("react_channel",""),
     ]
     for k,v in defaults:
         c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)",(k,v))
@@ -183,6 +202,16 @@ def init_db():
         title     TEXT,
         added_at  TEXT DEFAULT (datetime('now'))
     )''')
+
+    # ── Migratsiyalar (mavjud DB'larga xavfsiz qo'shiladi) ──
+    for stmt in (
+        "ALTER TABLE users ADD COLUMN bio TEXT",
+        "ALTER TABLE users ADD COLUMN bio_checked_at TEXT",
+        "ALTER TABLE bot_chats ADD COLUMN status TEXT DEFAULT 'member'",
+        "ALTER TABLE bot_chats ADD COLUMN updated_at TEXT",
+    ):
+        try: conn.execute(stmt)
+        except sqlite3.OperationalError: pass
 
     conn.commit(); conn.close()
 
@@ -469,15 +498,98 @@ def audit(admin_id,action,target="",detail=""):
     conn=get_conn(); conn.execute("INSERT INTO audit_log (admin_id,action,target,detail) VALUES (?,?,?,?)",(admin_id,action,target,detail)); conn.commit(); conn.close()
 
 # ── Bot chats (broadcast uchun) ───────────────────────
-def save_bot_chat(chat_id,chat_type,title=""):
-    conn=get_conn(); conn.execute("INSERT OR IGNORE INTO bot_chats VALUES (?,?,?,datetime('now'))",(chat_id,chat_type,title)); conn.commit(); conn.close()
+def save_bot_chat(chat_id, chat_type, title="", status="member"):
+    conn=get_conn()
+    conn.execute(
+        """INSERT INTO bot_chats (chat_id,chat_type,title,status,updated_at)
+           VALUES (?,?,?,?,datetime('now'))
+           ON CONFLICT(chat_id) DO UPDATE SET chat_type=excluded.chat_type,
+             title=excluded.title, status=excluded.status, updated_at=datetime('now')""",
+        (chat_id, chat_type, title or "", status))
+    conn.commit(); conn.close()
+
+_ACTIVE_CHAT = "COALESCE(status,'member') NOT IN ('left','kicked')"
 
 def get_bot_chats(exclude_db=True):
     from config import DB_GROUP_ID
     conn=get_conn()
-    if exclude_db: r=conn.execute("SELECT * FROM bot_chats WHERE chat_id!=?",(DB_GROUP_ID,)).fetchall()
-    else: r=conn.execute("SELECT * FROM bot_chats").fetchall()
+    if exclude_db: r=conn.execute(f"SELECT * FROM bot_chats WHERE chat_id!=? AND {_ACTIVE_CHAT}",(DB_GROUP_ID,)).fetchall()
+    else: r=conn.execute(f"SELECT * FROM bot_chats WHERE {_ACTIVE_CHAT}").fetchall()
     conn.close(); return r
+
+def get_bot_chats_page(offset=0, limit=10):
+    from config import DB_GROUP_ID
+    conn=get_conn()
+    r=conn.execute(f"SELECT * FROM bot_chats WHERE chat_id!=? AND {_ACTIVE_CHAT} ORDER BY COALESCE(updated_at,added_at) DESC LIMIT ? OFFSET ?",
+                   (DB_GROUP_ID, limit, offset)).fetchall()
+    conn.close(); return r
+
+def count_bot_chats():
+    from config import DB_GROUP_ID
+    conn=get_conn(); r=conn.execute(f"SELECT COUNT(*) c FROM bot_chats WHERE chat_id!=? AND {_ACTIVE_CHAT}",(DB_GROUP_ID,)).fetchone(); conn.close(); return r["c"]
+
+def get_bot_chat(chat_id):
+    conn=get_conn(); r=conn.execute("SELECT * FROM bot_chats WHERE chat_id=?",(chat_id,)).fetchone(); conn.close(); return r
+
+# ── Foydalanuvchi qidiruvi (ism / familiya / username / bio / ID) ──
+_USER_WHERE = ("(cf(full_name) LIKE ? ESCAPE '\\' OR cf(username) LIKE ? ESCAPE '\\' "
+               "OR cf(bio) LIKE ? ESCAPE '\\' OR CAST(user_id AS TEXT) LIKE ? ESCAPE '\\')")
+
+def search_users(q, limit=10, offset=0):
+    nq = norm_query(q)
+    if not nq: return []
+    like = _like(nq)
+    prefix = _like(nq)[1:]          # 'q%' — boshidan mos kelganlar yuqorida
+    conn=get_conn()
+    r=conn.execute(
+        f"""SELECT * FROM users WHERE {_USER_WHERE}
+            ORDER BY (cf(full_name) LIKE ? ESCAPE '\\' OR cf(username) LIKE ? ESCAPE '\\') DESC, joined_at DESC
+            LIMIT ? OFFSET ?""",
+        (like, like, like, like, prefix, prefix, limit, offset)).fetchall()
+    conn.close(); return r
+
+def count_search_users(q):
+    nq = norm_query(q)
+    if not nq: return 0
+    like = _like(nq)
+    conn=get_conn(); r=conn.execute(f"SELECT COUNT(*) c FROM users WHERE {_USER_WHERE}",(like,like,like,like)).fetchone(); conn.close()
+    return r["c"]
+
+# ── Profil sinxronizatsiyasi (bio qidiruvi uchun) ──
+def get_users_needing_bio(limit=40):
+    conn=get_conn()
+    r=conn.execute("""SELECT user_id FROM users
+                      WHERE bio_checked_at IS NULL OR bio_checked_at < datetime('now','-14 day')
+                      ORDER BY (bio_checked_at IS NOT NULL), joined_at DESC LIMIT ?""",(limit,)).fetchall()
+    conn.close(); return [x["user_id"] for x in r]
+
+def set_user_profile(user_id, full_name=None, username=None, bio=None):
+    conn=get_conn()
+    conn.execute("""UPDATE users SET full_name=COALESCE(NULLIF(?,''),full_name),
+                    username=COALESCE(?,username), bio=?, bio_checked_at=datetime('now')
+                    WHERE user_id=?""",(full_name, username, bio, user_id))
+    conn.commit(); conn.close()
+
+def mark_bio_checked(user_id):
+    conn=get_conn(); conn.execute("UPDATE users SET bio_checked_at=datetime('now') WHERE user_id=?",(user_id,)); conn.commit(); conn.close()
+
+# ── Faollik reytingi ──
+def get_activity_ranking(days=7, limit=10):
+    """Qidiruv (1), baho (3), sevimli (2) bo'yicha ball. days=0 — butun vaqt."""
+    since = "0000-00-00 00:00:00" if not days else None
+    conn=get_conn()
+    if since is None:
+        since = conn.execute("SELECT datetime('now', ?)",(f"-{int(days)} day",)).fetchone()[0]
+    r=conn.execute("""
+        SELECT u.user_id, u.full_name, u.username,
+          (SELECT COUNT(*) FROM search_logs s WHERE s.user_id=u.user_id AND s.searched_at>=?) AS searches,
+          (SELECT COUNT(*) FROM ratings  r WHERE r.user_id=u.user_id AND r.rated_at>=?)    AS rated,
+          (SELECT COUNT(*) FROM favorites f WHERE f.user_id=u.user_id AND f.added_at>=?)   AS favs
+        FROM users u WHERE u.is_banned=0
+        ORDER BY (searches + rated*3 + favs*2) DESC, u.joined_at DESC LIMIT ?""",
+        (since, since, since, limit)).fetchall()
+    conn.close()
+    return [x for x in r if (x["searches"] + x["rated"] + x["favs"]) > 0]
 
 # ── Misc ──────────────────────────────────────────────
 def log_search(user_id,query,found):

@@ -96,5 +96,29 @@ _DOMAIN = _os.getenv(
     _os.getenv("RENDER_EXTERNAL_URL", ""))
 )
 
-WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
-WEBHOOK_URL  = f"{_DOMAIN.rstrip('/')}{WEBHOOK_PATH}" if _DOMAIN else ""
+# ── Webhook xavfsizligi ───────────────────────────────
+# Token endi URL ichida OCHIQ yurmaydi (Render loglarida ko'rinib qolardi).
+# Yo'l va Telegram "secret_token" sarlavhasi tokendan (yoki ixtiyoriy
+# WEBHOOK_SECRET dan) HMAC bilan hosil qilinadi, shuning uchun Render'da
+# qo'shimcha o'zgaruvchi kiritish shart emas.
+import hashlib as _hashlib, hmac as _hmac
+
+_WH_KEY = (_os.getenv("WEBHOOK_SECRET") or BOT_TOKEN).encode()
+
+def _derive(label: str, n: int) -> str:
+    return _hmac.new(_WH_KEY, label.encode(), _hashlib.sha256).hexdigest()[:n]
+
+WEBHOOK_PATH          = "/wh/" + _derive("path", 40)
+WEBHOOK_HEADER_SECRET = _derive("header", 64)   # faqat A-Za-z0-9 (Telegram talabi)
+WEBHOOK_URL           = f"{_DOMAIN.rstrip('/')}{WEBHOOK_PATH}" if _DOMAIN else ""
+
+# ── DB zaxira nusxasi (Telegram'ga) ───────────────────
+# Render Free'da disk vaqtincha: har redeploy/restartda kinobot.db o'chadi.
+# Shu sababli DB muntazam Telegram chatga yuklanadi va bo'sh diskda
+# avtomatik tiklanadi. BACKUP_CHAT_ID bo'sh bo'lsa DB_GROUP_ID ishlatiladi
+# (alohida yopiq guruh/kanal tavsiya etiladi, botni admin qiling: xabar
+# yuborish, tahrirlash, pin qilish huquqlari bilan).
+BACKUP_CHAT_ID      = int(_os.getenv("BACKUP_CHAT_ID") or DB_GROUP_ID or 0)
+BACKUP_TOPIC_ID     = int(_os.getenv("BACKUP_TOPIC_ID", "0"))
+BACKUP_INTERVAL_MIN = max(2, int(_os.getenv("BACKUP_INTERVAL_MIN", "10")))
+BACKUP_ENABLED      = _os.getenv("BACKUP_ENABLED", "1") != "0" and BACKUP_CHAT_ID != 0

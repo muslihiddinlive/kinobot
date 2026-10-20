@@ -16,6 +16,13 @@ services:
         sync: false
       - key: WEBHOOK_DOMAIN
         sync: false
+      # Telegram'dagi DB zaxirasi (Render Free'da disk vaqtincha!). Alohida yopiq
+      # guruh/kanal ID si; bot admin bo'lsin (xabar yozish, tahrirlash, pin qilish).
+      - key: BACKUP_CHAT_ID
+        sync: false
+      # Ixtiyoriy: webhook yo'li/sarlavhasi uchun maxfiy kalit (bo'sh bo'lsa BOT_TOKEN dan hosil qilinadi)
+      - key: WEBHOOK_SECRET
+        generateValue: true
       - key: DB_PATH
         value: kinobot.db
     healthCheckPath: /health
