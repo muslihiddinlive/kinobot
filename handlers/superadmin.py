@@ -15,7 +15,7 @@ import database as db
 from config import SUPERADMIN_ID
 from middlewares import reactions as rx
 from utils import tg_backup
-from utils.keyboards import grid, page_nav, PAGE_SIZE
+from utils.keyboards import grid, page_nav, PAGE_SIZE, sbtn
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -142,7 +142,7 @@ async def sa_say_msg(message: Message, state: FSMContext):
     await message.reply(f"Shu xabar <b>{html.escape((c['title'] if c else '') or d['sa_target'].__str__())}</b> ga bot nomidan yuborilsinmi?",
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                            B("✅ Yuborish", "sa_sayY"), B("❌ Bekor", f"sa_chat_{d['sa_target']}_{d['sa_page']}")]]))
+                            sbtn("✅ Yuborish", "success", callback_data="sa_sayY"), B("❌ Bekor", f"sa_chat_{d['sa_target']}_{d['sa_page']}")]]))
 
 
 @router.callback_query(F.data == "sa_sayY")
@@ -170,7 +170,7 @@ async def sa_leave(cb: CallbackQuery):
     if await _deny(cb): return
     _, _, cid, page = cb.data.split("_")
     await _edit(cb, "🚪 Bot shu chatdan chiqsinmi?",
-                [[B("✅ Ha, chiqish", f"sa_leaveY_{cid}"), B("❌ Yo'q", f"sa_chat_{cid}_{page}")]])
+                [[sbtn("✅ Ha, chiqish", "danger", callback_data=f"sa_leaveY_{cid}"), B("❌ Yo'q", f"sa_chat_{cid}_{page}")]])
     await cb.answer()
 
 
@@ -265,7 +265,7 @@ async def on_channel_post(message: Message, bot: Bot):
 async def sa_backup(cb: CallbackQuery):
     if await _deny(cb): return
     await _edit(cb, tg_backup.status_text(),
-                [[B("💾 Hozir backup", "sa_backup_now"), B("🔄 Yangilash", "sa_backup")],
+                [[sbtn("💾 Hozir backup", "primary", callback_data="sa_backup_now"), B("🔄 Yangilash", "sa_backup")],
                  [B("🔙 Orqaga", "sa_menu")]])
     await cb.answer()
 

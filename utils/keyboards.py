@@ -1,8 +1,19 @@
+import os
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import GENRES, REQUIRED_CHANNEL_URL
 from locales import t, LANG_BUTTONS
 
 # ── Asosiy menyu (soddalashtirilgan) ──────────────────
+_STYLES_ON = os.getenv("BUTTON_STYLES", "1") != "0"
+
+def sbtn(text: str, style: str = None, **kw) -> InlineKeyboardButton:
+    """Rangli inline tugma (Bot API 9.4+): style = "primary" (ko'k), "success" (yashil), "danger" (qizil).
+    Eski Telegram ilovalarida oddiy tugma ko'rinadi, shuning uchun rangga tayanmay, matn/emoji ham ma'no beradi.
+    Rang har ekranda 1-2 ta bo'lsin. O'chirish: BUTTON_STYLES=0 (env)."""
+    if style and _STYLES_ON:
+        kw["style"] = style
+    return InlineKeyboardButton(text=text, **kw)
+
 def main_menu(lang="uz") -> InlineKeyboardMarkup:
     extra_texts = {
         "uz": "➕ Qo'shimcha", "ru": "➕ Дополнительно",
@@ -135,7 +146,7 @@ def movie_actions_keyboard(movie_id, lang="uz", is_favorite=False, is_admin=Fals
         buttons.append([
             InlineKeyboardButton(text="✏️ Tahrir", callback_data=f"edit_movie_{movie_id}"),
             InlineKeyboardButton(text="➕ Qism qo'sh", callback_data=f"add_ep_{movie_id}"),
-            InlineKeyboardButton(text="🗑 O'chir", callback_data=f"delete_movie_{movie_id}"),
+            sbtn("🗑 O'chir", "danger", callback_data=f"delete_movie_{movie_id}"),
         ])
     fav_text = "💔 Olib tashlash" if is_favorite else "❤️ Sevimlilarga"
     fav_data = f"unfav_{movie_id}" if is_favorite else f"fav_{movie_id}"
@@ -192,7 +203,7 @@ def movie_card_keyboard(movie_id, code, lang="uz", is_favorite=False,
         buttons.insert(0, [
             InlineKeyboardButton(text="✏️ Tahrir", callback_data=f"edit_movie_{movie_id}"),
             InlineKeyboardButton(text="➕ Qism qo'sh", callback_data=f"add_ep_{movie_id}"),
-            InlineKeyboardButton(text="🗑 O'chir", callback_data=f"delete_movie_{movie_id}"),
+            sbtn("🗑 O'chir", "danger", callback_data=f"delete_movie_{movie_id}"),
         ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -218,14 +229,14 @@ def plans_keyboard(lang="uz") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💎 PRO 1 oy — ⭐30", callback_data="buy_pro_1m")],
         [InlineKeyboardButton(text="💎 PRO 3 oy — ⭐50", callback_data="buy_pro_3m")],
-        [InlineKeyboardButton(text="👑 VIP 3 oy — ⭐100", callback_data="buy_vip_3m")],
+        [sbtn("👑 VIP 3 oy — ⭐100", "primary", callback_data="buy_vip_3m")],
         [InlineKeyboardButton(text="🎟 Limit +50 — ⭐50", callback_data="buy_limit_pack")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_main")],
     ])
 
 def limit_over_keyboard(lang="uz") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💎 PRO olish", callback_data="plans"),
+        [sbtn("💎 PRO olish", "primary", callback_data="plans"),
          InlineKeyboardButton(text="🎟 Limit +50", callback_data="buy_limit_pack")],
         [InlineKeyboardButton(text="🤝 Referal bilan bepul", callback_data="referral")],
         [InlineKeyboardButton(text=t("home",lang), callback_data="back_main")],
@@ -249,7 +260,7 @@ def channel_post_keyboard(bot_username, code) -> InlineKeyboardMarkup:
 def subscription_keyboard(channels, lang="uz", pending_code=None) -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=f"📢 {ch['channel_name']}", url=ch["invite_link"])] for ch in channels]
     cb = f"check_subscription:{pending_code}" if pending_code else "check_subscription"
-    buttons.append([InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data=cb)])
+    buttons.append([sbtn("✅ Obunani tekshirish", "success", callback_data=cb)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def admin_menu() -> InlineKeyboardMarkup:
@@ -331,8 +342,8 @@ def user_actions_keyboard(user_id, back_cb: str = "adm_users") -> InlineKeyboard
          InlineKeyboardButton(text="➕ Limit", callback_data=f"give_limit_{user_id}"),
          InlineKeyboardButton(text="🪙 Ball", callback_data=f"give_points_{user_id}")],
         [InlineKeyboardButton(text="📨 Xabar", callback_data=f"msg_user_{user_id}"),
-         InlineKeyboardButton(text="🚫 Ban", callback_data=f"ban_{user_id}"),
-         InlineKeyboardButton(text="✅ Unban", callback_data=f"unban_{user_id}")],
+         sbtn("🚫 Ban", "danger", callback_data=f"ban_{user_id}"),
+         sbtn("✅ Unban", "success", callback_data=f"unban_{user_id}")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data=back_cb)],
     ])
 
@@ -372,7 +383,7 @@ def channels_keyboard(channels) -> InlineKeyboardMarkup:
     for ch in channels:
         buttons.append([
             InlineKeyboardButton(text=f"📢 {ch['channel_name']}", url=ch["invite_link"]),
-            InlineKeyboardButton(text="🗑", callback_data=f"del_ch_{ch['channel_id']}"),
+            sbtn("🗑", "danger", callback_data=f"del_ch_{ch['channel_id']}"),
         ])
     buttons.append([InlineKeyboardButton(text="➕ Kanal qo'shish", callback_data="adm_add_ch")])
     buttons.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")])

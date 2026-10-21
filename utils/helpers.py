@@ -1,3 +1,4 @@
+import html
 from datetime import date, timedelta
 from config import GENRES
 
@@ -54,7 +55,7 @@ def format_movie_card(movie, episode_num=1, lang="uz", for_caption=False) -> str
         ep_text = f"{total_ep} ta qism (Serial)"
 
     lines = [
-        f"🎬  <b>{movie['title']}</b>",
+        f"🎬  <b>{html.escape(str(movie['title']))}</b>",
         f"{flag}  {movie_lang} tili ✅" if movie_lang else "",
         "╭─────────────────────",
         f"├‣  🔢  Kod:       <code>{movie['code']}</code>",
@@ -67,19 +68,51 @@ def format_movie_card(movie, episode_num=1, lang="uz", for_caption=False) -> str
     if movie.get("year"):
         lines.append(f"├‣  📅  Yil:       {movie['year']}")
     if movie.get("country"):
-        lines.append(f"├‣  🌍  Davlat:    {movie['country']}")
+        lines.append(f"├‣  🌍  Davlat:    {html.escape(str(movie['country']))}")
     if movie.get("format"):
-        lines.append(f"├‣  🎞  Sifat:     {movie['format']}")
+        lines.append(f"├‣  🎞  Sifat:     {html.escape(str(movie['format']))}")
     if ur > 0:
         lines.append(f"├‣  ⭐  Reyting:   {stars} {ur:.1f}/5  ({rc} ovoz)")
     lines.append("╰─────────────────────")
     if movie.get("description"):
-        desc = movie["description"]
-        if for_caption and len(desc) > 250:
-            desc = desc[:250].rsplit(" ", 1)[0] + "…"
-        lines.append(f"\n📝  <i>{desc}</i>")
+        # Avval qisqartiramiz, KEYIN escape qilamiz (&amp; kabi belgi o'rtasidan kesilib qolmasin).
+        # Media caption limiti 1024 belgi: kartochka ramkasi ~300 belgi, shuning uchun 450 gacha.
+        desc = str(movie["description"]).strip()
+        limit = 450 if for_caption else 3000
+        if len(desc) > limit:
+            desc = desc[:limit].rsplit(" ", 1)[0] + "…"
+        desc = html.escape(desc)
+        if len(desc) > 120:
+            # Uzun tavsif "Ko'proq" bilan yig'iladigan iqtibos (Bot API 7.4+): kartochka ixcham ko'rinadi
+            lines.append(f"\n<blockquote expandable>📝  {desc}</blockquote>")
+        else:
+            lines.append(f"\n📝  <i>{desc}</i>")
     lines.append(f"\n📥  <b>{movie.get('downloads',0)}</b> marta tomosha qilindi")
     return "\n".join([l for l in lines if l != ""])
+
+def effective_plan(user) -> str:
+    """Muddati o'tgan PRO/VIP 'free' hisoblanadi."""
+    plan = user["plan"]
+    until = user["plan_until"]
+    if plan in ("pro", "vip") and not (until and until >= str(date.today())):
+        return "free"
+    return plan
+
+def protect_for(user) -> bool:
+    """Kino yuborilganda forward/saqlashni taqiqlash (protect_content) kerakmi?
+
+    Sozlama `protect_mode` (admin: Sozlamalar → Kontent himoyasi):
+      off  — himoya yo'q (standart)
+      free — faqat Free foydalanuvchilar uchun (PRO/VIP saqlay oladi)
+      all  — hamma uchun
+    """
+    import database as db
+    mode = db.get_setting("protect_mode", "off")
+    if mode == "all":
+        return True
+    if mode == "free":
+        return effective_plan(user) not in ("pro", "vip")
+    return False
 
 def format_movie_info(movie, lang="uz", show_tags=False):
     """Orqaga moslik uchun"""

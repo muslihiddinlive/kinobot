@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import database as db
 from config import SUPERADMIN_ID, DB_GROUP_ID, TOPIC_ADMIN_LOGS
-from utils.keyboards import admin_menu, users_page_keyboard, user_actions_keyboard, channels_keyboard, grid, user_button
+from utils.keyboards import admin_menu, users_page_keyboard, user_actions_keyboard, channels_keyboard, grid, user_button, sbtn
 from utils import admin_nav
 from utils.helpers import get_plan_until
 
@@ -428,7 +428,7 @@ async def adm_promos(cb: CallbackQuery):
     if not promos: text += "Hozircha yo'q.\n"
     await cb.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Yangi", callback_data="adm_create_promo"),
-         InlineKeyboardButton(text="🗑 O'chirish", callback_data="adm_del_promo")],
+         sbtn("🗑 O'chirish", "danger", callback_data="adm_del_promo")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")],
     ]))
     await cb.answer()
@@ -570,6 +570,8 @@ async def adm_settings(cb: CallbackQuery):
     free  = db.get_setting("free_daily_limit","5")
     pro   = db.get_setting("pro_daily_limit","10")
     maint = db.get_setting("maintenance_mode","0")
+    pm = db.get_setting("protect_mode","off")
+    pm_label = {"off": "❌ Yopiq", "free": "🆓 Faqat Free", "all": "🔒 Hamma"}.get(pm, pm)
     await cb.message.edit_text("⚙️ <b>Sozlamalar</b>", parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"🆓 Free limit: {free}/kun", callback_data="sett_free_daily_limit")],
@@ -578,6 +580,7 @@ async def adm_settings(cb: CallbackQuery):
             [InlineKeyboardButton(
                 text="🔧 Texnik rejim: " + ("✅ Yoqilgan" if maint=="1" else "❌ Ochirilgan"),
                 callback_data="sett_toggle_maint")],
+            [InlineKeyboardButton(text=f"🔒 Kontent himoyasi: {pm_label}", callback_data="sett_toggle_protect")],
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")],
         ]))
     await cb.answer()
@@ -589,6 +592,20 @@ async def toggle_maint(cb: CallbackQuery):
     db.set_setting("maintenance_mode","0" if cur=="1" else "1")
     status = "o'chirildi" if cur=="1" else "yoqildi"
     await cb.answer(f"Texnik rejim {status}", show_alert=True)
+    await adm_settings(cb)
+
+@router.callback_query(F.data == "sett_toggle_protect")
+async def toggle_protect(cb: CallbackQuery):
+    """Kino yuborilganda forward/saqlashni taqiqlash: Yopiq -> Faqat Free -> Hamma -> Yopiq."""
+    if not is_admin(cb.from_user.id): return await cb.answer()
+    order = ["off", "free", "all"]
+    cur = db.get_setting("protect_mode", "off")
+    new = order[(order.index(cur) + 1) % 3] if cur in order else "free"
+    db.set_setting("protect_mode", new)
+    db.audit(cb.from_user.id, "setting", "protect_mode", new)
+    note = {"off": "Himoya o'chirildi", "free": "Free foydalanuvchilar kinoni forward/saqlay olmaydi (PRO/VIP olishi mumkin)",
+            "all": "Hamma uchun forward/saqlash taqiqlandi"}[new]
+    await cb.answer(note, show_alert=True)
     await adm_settings(cb)
 
 @router.callback_query(F.data.startswith("sett_"))

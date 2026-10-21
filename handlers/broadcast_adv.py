@@ -1,3 +1,4 @@
+from utils.keyboards import sbtn
 from aiogram import Router, F, Bot
 from aiogram.types import (Message, CallbackQuery, InlineKeyboardMarkup,
                             InlineKeyboardButton, BufferedInputFile)
@@ -72,7 +73,7 @@ async def _start_collecting(message_or_cb, state, target_type, is_cb=True):
         "Tayyor bo'lgach ✅ tugmasini bosing:"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Yuborish!", callback_data="bc_send_now")],
+        [sbtn("✅ Yuborish!", "success", callback_data="bc_send_now")],
         [InlineKeyboardButton(text="🗑 Tozalash", callback_data="bc_clear")],
         [InlineKeyboardButton(text="❌ Bekor", callback_data="adm_broadcast")],
     ])
@@ -117,7 +118,7 @@ async def bc_collect(message: Message, state: FSMContext):
         f"🎯 Maqsad: {target_name}\n\n"
         "Yana xabar yuboring yoki ✅ Yuborish bosing:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Yuborish!", callback_data="bc_send_now")],
+            [sbtn("✅ Yuborish!", "success", callback_data="bc_send_now")],
             [InlineKeyboardButton(text="🗑 Tozalash", callback_data="bc_clear")],
             [InlineKeyboardButton(text="❌ Bekor", callback_data="adm_broadcast")],
         ])
@@ -353,7 +354,7 @@ async def send_specific_start(cb: CallbackQuery, state: FSMContext):
         f"📨 <b>{name}</b> ga yubormoqchi bo'lgan xabarlarni yuboring:\n\n"
         "Tayyor bo'lgach ✅ bosing:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Yuborish!", callback_data="bc_send_now")],
+            [sbtn("✅ Yuborish!", "success", callback_data="bc_send_now")],
             [InlineKeyboardButton(text="❌ Bekor", callback_data="adm_broadcast")],
         ]),
         parse_mode="HTML"

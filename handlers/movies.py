@@ -8,6 +8,7 @@ from utils.helpers import format_movie_card, parse_tags, auto_code
 from utils.keyboards import (admin_menu, channel_post_keyboard, add_movie_format_kb,
                               add_movie_rating_kb, episodes_type_kb, movie_status_kb,
                               after_movie_add_kb, thumbnail_kb, episode_list_keyboard)
+from utils.keyboards import sbtn
 
 router = Router()
 
@@ -577,7 +578,7 @@ async def delete_confirm(cb: CallbackQuery):
     mid = int(cb.data.replace("delete_movie_",""))
     await cb.message.answer("⚠️ Kinoni o'chirishni tasdiqlaysizmi?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Ha", callback_data=f"confirm_del_{mid}"),
+            [sbtn("✅ Ha", "danger", callback_data=f"confirm_del_{mid}"),
              InlineKeyboardButton(text="❌ Yo'q", callback_data="back_main")],
         ]))
     await cb.answer()

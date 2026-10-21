@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 import database as db
 from config import (DB_GROUP_ID, TOPIC_ERRORS, TOPIC_USERS, REQUIRED_CHANNEL_URL,
                     GENRES, SUPERADMIN_ID, SUPERADMIN_GREETINGS, BOT_NAME, TOPIC_VIP_CLUB)
-from utils.helpers import format_movie_card, get_plan_until, get_lang, format_limit_text, days_left
+from utils.helpers import format_movie_card, get_plan_until, get_lang, format_limit_text, days_left, protect_for
 from utils.keyboards import (main_menu, extra_menu, back_main, search_menu, media_type_keyboard,
                               movies_list_keyboard, movie_card_keyboard, plans_keyboard,
                               limit_over_keyboard, episode_list_keyboard, language_keyboard,
@@ -415,7 +415,8 @@ async def _send_movie_by_code(message: Message, bot: Bot, code: str, episode_num
     try:
         await bot.copy_message(
             message.chat.id, DB_GROUP_ID, msg_id,
-            caption=card, parse_mode="HTML", reply_markup=video_markup
+            caption=card, parse_mode="HTML", reply_markup=video_markup,
+            protect_content=protect_for(user)
         )
     except Exception as e:
         await message.answer("❌ Kino yuborishda xato. Qayta urining.")
@@ -503,7 +504,8 @@ async def _send_movie_from_cb(cb: CallbackQuery, bot: Bot, code: str, episode_nu
     try:
         await bot.copy_message(
             cb.message.chat.id, DB_GROUP_ID, msg_id,
-            caption=card, parse_mode="HTML", reply_markup=video_markup
+            caption=card, parse_mode="HTML", reply_markup=video_markup,
+            protect_content=protect_for(user)
         )
     except Exception:
         await cb.answer("❌ Xato yuz berdi", show_alert=True)

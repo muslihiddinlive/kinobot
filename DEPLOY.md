@@ -77,6 +77,12 @@ Backup bor-u tiklab bo'lmasa, bot **ishga tushmaydi** (bo'sh DB bilan ishlab yax
 Cheklovlar: gzip hajmi 20 MB dan oshmasin (Bot API yuklab olish limiti); redeploy paytidagi oxirgi bir necha daqiqalik o'zgarishlar
 yo'qolishi mumkin (`BACKUP_INTERVAL_MIN` ni kichik qiling). Katta o'sishda tashqi DB (Neon/Turso) ga o'tish tavsiya etiladi.
 
+## 🔒 Kontent himoyasi (forward/saqlash)
+
+`/admin` → ⚙️ Sozlamalar → **Kontent himoyasi**: ❌ Yopiq → 🆓 Faqat Free → 🔒 Hamma.
+"Faqat Free" rejimida Free foydalanuvchilar kinoni forward qila olmaydi va saqlay olmaydi, PRO/VIP esa saqlay oladi
+(PRO/VIP uchun yana bir foyda). Standart: yopiq (hech narsa o'zgarmaydi).
+
 ## 🔐 Webhook xavfsizligi
 
 Token endi URL'da yurmaydi: yo'l `/wh/<maxfiy>` va Telegram har so'rovda `X-Telegram-Bot-Api-Secret-Token` sarlavhasini yuboradi

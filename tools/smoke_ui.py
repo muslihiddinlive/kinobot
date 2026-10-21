@@ -149,6 +149,12 @@ async def main():
     await dp.feed_update(bot, Update(update_id=777777, callback_query=c1)); n1 = len(CALLS)
     await dp.feed_update(bot, Update(update_id=777777, callback_query=c1)); assert len(CALLS) == n1 and n1 > 0
     print("OK 8: takroriy update o'tkazib yuborildi")
+    # 9) Sozlamalar: kontent himoyasi tugmasi off -> free -> all -> off
+    d = last_edit(await cb(1, "adm_settings")); assert "sett_toggle_protect" in cbs(d) and "Yopiq" in " ".join(texts(d))
+    for want, label in (("free", "Faqat Free"), ("all", "Hamma"), ("off", "Yopiq")):
+        r = await cb(1, "sett_toggle_protect"); assert db.get_setting("protect_mode") == want, db.get_setting("protect_mode")
+        assert label in " ".join(texts(last_edit(r)))
+    print("OK 9: kontent himoyasi sozlamasi (off -> free -> all -> off)")
     print("ALL UI OK")
 
 asyncio.run(main())

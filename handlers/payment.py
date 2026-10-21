@@ -5,6 +5,7 @@ from config import (PRICE_PRO_1M, PRICE_PRO_3M, PRICE_VIP_3M,
                     PRICE_LIMIT_PACK, DB_GROUP_ID, TOPIC_PAYMENTS)
 from utils.helpers import get_plan_until, get_lang
 from utils.keyboards import plans_keyboard, back_main
+from utils.keyboards import sbtn
 from locales import t
 
 router = Router()
@@ -41,8 +42,8 @@ async def _request_purchase(cb: CallbackQuery, payload: str):
             message_thread_id=TOPIC_PAYMENTS,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_pay:{cb.from_user.id}:{payload}"),
-                InlineKeyboardButton(text="❌ Rad etish", callback_data=f"decline_pay:{cb.from_user.id}:{payload}"),
+                sbtn("✅ Tasdiqlash", "success", callback_data=f"approve_pay:{cb.from_user.id}:{payload}"),
+                sbtn("❌ Rad etish", "danger", callback_data=f"decline_pay:{cb.from_user.id}:{payload}"),
             ]])
         )
     except Exception:

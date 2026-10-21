@@ -142,6 +142,8 @@ def init_db():
         ("weekly_report_chat",""), ("scheduled_broadcast",""),
         # Guruhlarda admin xabarlariga avto-reaksiya (emoji, bo'sh = o'chiq)
         ("react_super","🔥"), ("react_admin","👍"), ("react_channel",""),
+        # Kontent himoyasi (forward/saqlash): off | free | all
+        ("protect_mode","off"),
     ]
     for k,v in defaults:
         c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)",(k,v))
