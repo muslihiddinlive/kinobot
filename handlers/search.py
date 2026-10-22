@@ -1,4 +1,7 @@
+import asyncio
+import html
 from aiogram import Router, F, Bot
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -11,8 +14,9 @@ from utils.keyboards import (main_menu, extra_menu, back_main, search_menu, medi
                               movies_list_keyboard, movie_card_keyboard, plans_keyboard,
                               limit_over_keyboard, episode_list_keyboard, language_keyboard,
                               movie_video_keyboard, movie_rating_keyboard, movie_rated_keyboard,
-                              movie_actions_keyboard)
+                              movie_actions_keyboard, search_results_keyboard, PAGE_SIZE)
 from locales import t
+from utils import search_engine as engine
 from datetime import date
 
 router = Router()
@@ -40,6 +44,87 @@ class CommentState(StatesGroup):
 #  catch_any_text (F.text filter) ENG OXIRIDA bo'ladi.
 # ══════════════════════════════════════════════════════
 
+
+# ── Yagona qidiruv oqimi (nom / teg / yaqin yozuv) ────
+_S = {
+    "didyoumean": {"uz": "💡 Shuni nazarda tutdingizmi?", "ru": "💡 Возможно, вы имели в виду:", "en": "💡 Did you mean:", "tr": "💡 Bunu mu demek istediniz?"},
+    "fuzzy": {"uz": "ℹ️ Aniq mos kelmadi, o'xshashlari:", "ru": "ℹ️ Точных совпадений нет, похожие:", "en": "ℹ️ No exact match, similar results:", "tr": "ℹ️ Tam eşleşme yok, benzerleri:"},
+    "watch": {"uz": "🔔 Qo'shilganda xabar bering", "ru": "🔔 Сообщить, когда появится", "en": "🔔 Notify me when added", "tr": "🔔 Eklenince haber ver"},
+    "watch_ok": {"uz": "✅ Kino qo'shilganda sizga xabar beramiz!", "ru": "✅ Сообщим, когда фильм появится!", "en": "✅ We'll notify you when it's added!", "tr": "✅ Eklenince size haber vereceğiz!"},
+    "expired": {"uz": "Qidiruv eskirgan, qayta yozing.", "ru": "Поиск устарел, введите заново.", "en": "Search expired, type again.", "tr": "Arama zaman aşımına uğradı, tekrar yazın."},
+}
+
+def _s(key, lang):
+    d = _S[key]
+    return d.get(lang, d["uz"])
+
+
+async def _do_search(message, bot, query, lang, retry_rows=None, user_id=None, back="search"):
+    """Qidiruv: lotin/kirill, apostrof, ko'p so'zli, xatoga chidamli. Faqat ANIQ moslikda kino darhol yuboriladi."""
+    uid = user_id or message.from_user.id
+    res = await asyncio.to_thread(engine.search, query, PAGE_SIZE, 0)
+    engine.remember(uid, query)
+    safe = html.escape(query[:64])
+    if not res.rows:
+        db.log_search(uid, query, False)
+        sug = await asyncio.to_thread(engine.suggest, query, 3)
+        text = t("search_not_found", lang, query=safe)
+        rows = []
+        if sug:
+            text += "\n\n" + _s("didyoumean", lang)
+            rows += [[InlineKeyboardButton(text=f"🎬 {str(m['title'])[:40]}", callback_data=f"get_movie_{m['code']}")] for m in sug]
+        rows.append([InlineKeyboardButton(text=_s("watch", lang), callback_data="watch_q")])
+        rows += retry_rows or [
+            [InlineKeyboardButton(text=t("menu_search", lang), callback_data="search")],
+            [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
+            [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
+        ]
+        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows), parse_mode="HTML")
+        return
+    db.log_search(uid, query, True)
+    movie = engine.pick(res)
+    if movie:
+        await _send_movie_by_code(message, bot, movie["code"])
+        return
+    text = t("search_results", lang, query=safe, count=res.total)
+    if res.fuzzy:
+        text += "\n" + _s("fuzzy", lang)
+    await message.answer(text, reply_markup=search_results_keyboard(res.rows, 0, res.total, lang, back), parse_mode="HTML")
+
+
+@router.callback_query(F.data.regexp(r"^sq_\d+$"))
+async def search_page(cb: CallbackQuery):
+    """Qidiruv natijalari sahifalari (so'rov foydalanuvchining oxirgi qidiruvidan olinadi)."""
+    lang = get_lang(cb.from_user.id)
+    query = engine.recall(cb.from_user.id)
+    if not query:
+        await cb.answer(_s("expired", lang), show_alert=True)
+        return
+    page = int(cb.data.replace("sq_", ""))
+    res = await asyncio.to_thread(engine.search, query, PAGE_SIZE, page * PAGE_SIZE)
+    if not res.rows and page:
+        page = 0
+        res = await asyncio.to_thread(engine.search, query, PAGE_SIZE, 0)
+    text = t("search_results", lang, query=html.escape(query[:64]), count=res.total)
+    try:
+        await cb.message.edit_text(text, reply_markup=search_results_keyboard(res.rows, page, res.total, lang), parse_mode="HTML")
+    except TelegramBadRequest as e:
+        if "not modified" not in str(e).lower():
+            raise
+    await cb.answer()
+
+
+@router.callback_query(F.data == "watch_q")
+async def watch_query(cb: CallbackQuery):
+    lang = get_lang(cb.from_user.id)
+    query = engine.recall(cb.from_user.id)
+    if not query:
+        await cb.answer(_s("expired", lang), show_alert=True)
+        return
+    db.add_watch(cb.from_user.id, query)
+    await cb.answer(_s("watch_ok", lang), show_alert=True)
+
+
 # ── State li message handlerlar (BIRINCHI) ────────────
 
 @router.message(SearchByCodeState.waiting)
@@ -49,6 +134,7 @@ async def process_search_by_code(message: Message, state: FSMContext, bot: Bot):
     lang = get_lang(message.from_user.id)
     movie = db.get_movie_by_code(query)
     if movie:
+        db.log_search(message.from_user.id, query, True)
         await _send_movie_by_code(message, bot, movie["code"])
         return
     db.log_search(message.from_user.id, query, False)
@@ -65,62 +151,25 @@ async def process_search_by_code(message: Message, state: FSMContext, bot: Bot):
 @router.message(SearchByNameState.waiting)
 async def process_search_by_name(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
-    query = message.text.strip()
+    query = (message.text or "").strip()
     lang = get_lang(message.from_user.id)
-    results = db.search_movies(query)
-    if not results:
-        db.log_search(message.from_user.id, query, False)
-        await message.answer(
-            t("search_not_found", lang, query=query),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔤 Qayta qidirish", callback_data="search_by_name")],
-                [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
-                [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
-            ]),
-            parse_mode="HTML"
-        )
-        return
-    if len(results) == 1:
-        await _send_movie_by_code(message, bot, results[0]["code"])
-        return
-    db.log_search(message.from_user.id, query, True)
-    await message.answer(
-        t("search_results", lang, query=query, count=len(results)),
-        reply_markup=movies_list_keyboard(results, lang, back_cb="search"),
-        parse_mode="HTML"
-    )
+    await _do_search(message, bot, query, lang, retry_rows=[
+        [InlineKeyboardButton(text="🔤 Qayta qidirish", callback_data="search_by_name")],
+        [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
+        [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
+    ])
 
 @router.message(SearchState.waiting)
 async def process_search(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
-    query = message.text.strip()
+    query = (message.text or "").strip()
     lang = get_lang(message.from_user.id)
     movie = db.get_movie_by_code(query.upper().lstrip("#"))
     if movie:
+        db.log_search(message.from_user.id, query, True)
         await _send_movie_by_code(message, bot, movie["code"])
         return
-    results = db.search_movies(query)
-    if not results:
-        db.log_search(message.from_user.id, query, False)
-        await message.answer(
-            t("search_not_found", lang, query=query),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=t("menu_search", lang), callback_data="search")],
-                [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
-                [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
-            ]),
-            parse_mode="HTML"
-        )
-        return
-    if len(results) == 1:
-        await _send_movie_by_code(message, bot, results[0]["code"])
-        return
-    db.log_search(message.from_user.id, query, True)
-    await message.answer(
-        t("search_results", lang, query=query, count=len(results)),
-        reply_markup=movies_list_keyboard(results, lang, back_cb="search"),
-        parse_mode="HTML"
-    )
+    await _do_search(message, bot, query, lang)
 
 @router.message(CommentState.waiting)
 async def save_comment(message: Message, state: FSMContext):
@@ -138,6 +187,7 @@ async def request_send(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     lang = get_lang(message.from_user.id)
     db.add_movie_request(message.from_user.id, message.text.strip())
+    db.add_watch(message.from_user.id, message.text.strip())      # kino qo'shilganda avtomatik xabar
     try:
         await bot.send_message(DB_GROUP_ID,
             f"📩 Kino so'rovi!\n"
@@ -286,35 +336,17 @@ async def catch_any_text(message: Message, bot: Bot):
     clean_code = query.upper().lstrip("#")
     movie = db.get_movie_by_code(clean_code)
     if movie:
+        db.log_search(message.from_user.id, query, True)
         await _send_movie_by_code(message, bot, movie["code"])
         return
 
-    # 2) Nom/tag bo'yicha qidirish
-    results = db.search_movies(query)
-    if not results:
-        db.log_search(message.from_user.id, query, False)
-        await message.answer(
-            t("search_not_found", lang, query=query),
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔢 Kod orqali", callback_data="search_by_code")],
-                [InlineKeyboardButton(text="🔤 Nom bo'yicha", callback_data="search_by_name")],
-                [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
-                [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
-            ]),
-            parse_mode="HTML"
-        )
-        return
-
-    if len(results) == 1:
-        await _send_movie_by_code(message, bot, results[0]["code"])
-        return
-
-    db.log_search(message.from_user.id, query, True)
-    await message.answer(
-        t("search_results", lang, query=query, count=len(results)),
-        reply_markup=movies_list_keyboard(results, lang, back_cb="search"),
-        parse_mode="HTML"
-    )
+    # 2) Nom/teg bo'yicha qidirish (lotin/kirill, xatoga chidamli)
+    await _do_search(message, bot, query, lang, retry_rows=[
+        [InlineKeyboardButton(text="🔢 Kod orqali", callback_data="search_by_code")],
+        [InlineKeyboardButton(text="🔤 Nom bo'yicha", callback_data="search_by_name")],
+        [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
+        [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
+    ])
 
 @router.message(F.text.startswith("/"))
 async def unknown_cmd(message: Message):

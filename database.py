@@ -185,6 +185,13 @@ def init_db():
         searched_at TEXT DEFAULT (datetime('now'))
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS search_watch (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER, query TEXT,
+        notified INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS movie_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER, request TEXT,
@@ -349,6 +356,14 @@ def _ensure_episode_type_column():
     except: pass
     conn.close()
 
+def _search_invalidate():
+    """Qidiruv indeksi (utils/search_engine) keshini yangilashga majbur qiladi."""
+    try:
+        from utils import search_engine
+        search_engine.invalidate()
+    except Exception:
+        pass
+
 def add_movie(code,title,topic_id,message_id,year,country,language,format_,rating,description,tags,added_by,episode_type="single"):
     _ensure_episode_type_column()
     conn=get_conn()
@@ -357,14 +372,22 @@ def add_movie(code,title,topic_id,message_id,year,country,language,format_,ratin
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (code,title,topic_id,message_id,year,country,language,format_,rating,description,tags,added_by,episode_type))
     conn.commit(); conn.close()
+    _search_invalidate()
 
 def get_movie_by_code(code):
     conn=get_conn(); r=conn.execute("SELECT * FROM movies WHERE code=?",(code.upper(),)).fetchone(); conn.close(); return r
 
-def search_movies(query):
-    conn=get_conn(); q=f"%{query.lower()}%"
-    r=conn.execute("SELECT * FROM movies WHERE lower(title) LIKE ? OR lower(code) LIKE ? OR lower(tags) LIKE ? ORDER BY is_trending DESC,downloads DESC LIMIT 10",(q,q,q)).fetchall()
-    conn.close(); return r
+def search_movies(query, limit=10):
+    """Qidiruv: lotin/kirill, apostrof, ko'p so'zli, xatoga chidamli (utils/search_engine). Xato bo'lsa eski LIKE."""
+    try:
+        from utils import search_engine
+        return search_engine.search(query, limit=limit).rows
+    except Exception as e:  # noqa: BLE001  (qidiruv hech qachon butunlay yiqilmasin)
+        import logging
+        logging.getLogger(__name__).error("search_engine xatosi, LIKE zaxirasi: %s", e)
+        conn=get_conn(); q=f"%{query.lower()}%"
+        r=conn.execute("SELECT * FROM movies WHERE lower(title) LIKE ? OR lower(code) LIKE ? OR lower(tags) LIKE ? ORDER BY is_trending DESC,downloads DESC LIMIT ?",(q,q,q,limit)).fetchall()
+        conn.close(); return r
 
 def get_movies_by_topic(topic_id,limit=20):
     conn=get_conn(); r=conn.execute("SELECT * FROM movies WHERE topic_id=? ORDER BY is_trending DESC,downloads DESC LIMIT ?",(topic_id,limit)).fetchall(); conn.close(); return r
@@ -386,6 +409,7 @@ def update_movie(movie_id,**kwargs):
     fields=", ".join(f"{k}=?" for k in kwargs)
     conn.execute(f"UPDATE movies SET {fields} WHERE id=?",list(kwargs.values())+[movie_id])
     conn.commit(); conn.close()
+    _search_invalidate()
 
 def delete_movie(movie_id):
     conn = get_conn()
@@ -396,6 +420,7 @@ def delete_movie(movie_id):
     conn.execute("DELETE FROM favorites WHERE movie_id=?", (movie_id,))
     conn.execute("DELETE FROM ratings WHERE movie_id=?", (movie_id,))
     conn.commit(); conn.close()
+    _search_invalidate()
     return dict(row) if row else None
 
 def list_movies(topic_id=None,limit=20,offset=0):
@@ -406,6 +431,7 @@ def list_movies(topic_id=None,limit=20,offset=0):
 
 def set_trending(movie_id,value):
     conn=get_conn(); conn.execute("UPDATE movies SET is_trending=? WHERE id=?",(value,movie_id)); conn.commit(); conn.close()
+    _search_invalidate()
 
 def get_popular_tags(limit=10):
     conn=get_conn(); r=conn.execute("SELECT tags FROM movies WHERE tags!=''").fetchall(); conn.close()
@@ -596,6 +622,21 @@ def get_activity_ranking(days=7, limit=10):
 # ── Misc ──────────────────────────────────────────────
 def log_search(user_id,query,found):
     conn=get_conn(); conn.execute("INSERT INTO search_logs (user_id,query,found) VALUES (?,?,?)",(user_id,query,int(found))); conn.commit(); conn.close()
+
+# ── "Kino qo'shilganda xabar bering" ──
+def add_watch(user_id, query):
+    q=(query or "").strip()[:64]
+    if not q: return False
+    conn=get_conn()
+    ex=conn.execute("SELECT id FROM search_watch WHERE user_id=? AND lower(query)=lower(?) AND notified=0",(user_id,q)).fetchone()
+    if not ex: conn.execute("INSERT INTO search_watch (user_id,query) VALUES (?,?)",(user_id,q))
+    conn.commit(); conn.close(); return not ex
+
+def get_pending_watches(limit=5000):
+    conn=get_conn(); r=conn.execute("SELECT * FROM search_watch WHERE notified=0 ORDER BY id LIMIT ?",(limit,)).fetchall(); conn.close(); return r
+
+def mark_watch_notified(watch_id):
+    conn=get_conn(); conn.execute("UPDATE search_watch SET notified=1 WHERE id=?",(watch_id,)); conn.commit(); conn.close()
 
 def add_movie_request(user_id,request):
     conn=get_conn(); conn.execute("INSERT INTO movie_requests (user_id,request) VALUES (?,?)",(user_id,request)); conn.commit(); conn.close()

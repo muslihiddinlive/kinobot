@@ -90,6 +90,23 @@ def movies_list_keyboard(movies, lang="uz", back_cb="browse_media") -> InlineKey
     ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def _short(title: str, n: int = 30) -> str:
+    title = str(title)
+    return title if len(title) <= n else title[: n - 1] + "…"
+
+def search_results_keyboard(movies, page, total, lang="uz", back_cb="search") -> InlineKeyboardMarkup:
+    """Qidiruv natijalari: qisqa nomlar 2 ustunda, uzunlari alohida qatorda, sahifalash bilan."""
+    btns = [InlineKeyboardButton(text=f"{'🔥' if m.get('is_trending') else '🎬'} {_short(m['title'])}",
+                                 callback_data=f"get_movie_{m['code']}") for m in movies]
+    rows = grid(btns, long_len=18)
+    pages = max(1, (total - 1) // PAGE_SIZE + 1)
+    nav = page_nav(page, pages, "sq_")
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data=back_cb),
+                 InlineKeyboardButton(text=t("home", lang), callback_data="back_main")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 def _episode_nav_row(movie_id, episode_num, total_episodes):
     if total_episodes <= 1:
         return None
@@ -279,7 +296,8 @@ def admin_menu() -> InlineKeyboardMarkup:
          InlineKeyboardButton(text="🔍 Dublikat", callback_data="adm_duplicates")],
         [InlineKeyboardButton(text="⚙️ Sozlamalar", callback_data="adm_settings"),
          InlineKeyboardButton(text="📋 Audit", callback_data="adm_audit")],
-        [InlineKeyboardButton(text="👑 Superadmin", callback_data="sa_menu")],
+        [InlineKeyboardButton(text="🔎 Topilmaganlar", callback_data="adm_missing"),
+         InlineKeyboardButton(text="👑 Superadmin", callback_data="sa_menu")],
     ])
 
 # ── Umumiy UI yordamchilari ───────────────────────────

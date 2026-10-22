@@ -1,74 +1,100 @@
-from aiogram import Router, Bot
-from aiogram.types import (InlineQuery, InlineQueryResultArticle,
-                            InputTextMessageContent, InlineQueryResultCachedVideo,
-                            InlineQueryResultCachedDocument)
-import database as db
-from utils.helpers import format_movie_info, get_lang
-from config import TOPIC_VIP_CLUB
-from datetime import date
+import asyncio
 import hashlib
+import html
+from datetime import date
+
+from aiogram import Router, Bot
+from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent
+
+import database as db
+from utils import search_engine as engine
+from utils.helpers import get_lang
+from config import TOPIC_VIP_CLUB, GENRES
 
 router = Router()
+
+INLINE_PAGE = 20
+_BOT_USERNAME = None
+
+
+async def _bot_username(bot: Bot) -> str:
+    """Bot username'i bir marta olinadi (avval har natija uchun alohida get_me() chaqirilardi)."""
+    global _BOT_USERNAME
+    if not _BOT_USERNAME:
+        _BOT_USERNAME = (await bot.get_me()).username
+    return _BOT_USERNAME
+
+
+def _genre_name(topic_id) -> str:
+    g = GENRES.get(topic_id)
+    if isinstance(g, (tuple, list)):
+        return str(g[0])
+    return str(g) if g else ""
+
 
 @router.inline_query()
 async def inline_search(query: InlineQuery, bot: Bot):
     text = query.query.strip()
     user_id = query.from_user.id
-    lang = get_lang(user_id)
     user = db.get_user(user_id)
-    results = []
     today = str(date.today())
+    offset = int(query.offset) if (query.offset or "").isdigit() else 0
+    next_offset = ""
 
     if not text:
         # Bo'sh qidiruv — trending kinolar
-        movies = db.get_trending_movies(10)
+        movies = db.get_trending_movies(INLINE_PAGE)
     else:
-        movies = db.search_movies(text)
+        # Lotin/kirill, apostrof, ko'p so'zli, xatoga chidamli qidiruv + sahifalash (offset)
+        res = await asyncio.to_thread(engine.search, text, INLINE_PAGE, offset)
+        movies = res.rows
+        if offset + INLINE_PAGE < res.total:
+            next_offset = str(offset + INLINE_PAGE)
 
-    for movie in movies[:15]:
-        # VIP kinoni faqat MUDDATI TUGAMAGAN VIP userlar ko'radi.
-        # --- FIX: ilgari faqat user["plan"]=="vip" tekshirilardi,
-        # plan_until (muddat) tekshirilmasdi. Natijada VIP muddati
-        # tugagan (lekin DB'da hali "lazy downgrade" bo'lmagan)
-        # foydalanuvchi inline qidiruv orqali VIP kinolarni ko'rishda
-        # davom etardi — search.py va vip.py'dagi to'g'ri tekshiruvdan
-        # farqli o'laroq.
+    uname = await _bot_username(bot)
+    results = []
+    for movie in movies:
+        # VIP kinoni faqat MUDDATI TUGAMAGAN VIP userlar ko'radi (plan_until ham tekshiriladi).
         if movie["topic_id"] == TOPIC_VIP_CLUB:
             is_vip = (user and user["plan"] == "vip" and
                       user["plan_until"] and user["plan_until"] >= today)
             if not is_vip and not db.is_admin(user_id):
                 continue
 
-        info = format_movie_info(dict(movie), lang, show_tags=False)
-        bot_info = await bot.get_me()
-        deep = f"https://t.me/{bot_info.username}?start=movie_{movie['code']}"
+        title = html.escape(str(movie["title"]))
+        code = html.escape(str(movie["code"]))
+        deep = f"https://t.me/{uname}?start=movie_{movie['code']}"
+        meta = [str(movie["year"])] if movie["year"] else []
+        genre = _genre_name(movie["topic_id"])
+        if genre:
+            meta.append(genre)
+        if movie["user_rating"]:
+            meta.append(f"⭐{movie['user_rating']}")
+        meta.append(f"📥 {movie['downloads']}")
 
-        # Kino ma'lumoti — article sifatida
-        result = InlineQueryResultArticle(
-            id=hashlib.md5(movie["code"].encode()).hexdigest(),
+        results.append(InlineQueryResultArticle(
+            id=hashlib.md5(str(movie["code"]).encode()).hexdigest(),
             title=f"🎬 {movie['title']}",
-            description=f"📥 {movie['downloads']} | 🔢 {movie['code']}",
+            description=" • ".join(meta),
             input_message_content=InputTextMessageContent(
                 message_text=(
-                    f"🎬 <b>{movie['title']}</b>\n"
-                    f"🔢 Kod: <code>{movie['code']}</code>\n\n"
+                    f"🎬 <b>{title}</b>\n"
+                    f"🔢 Kod: <code>{code}</code>\n\n"
                     f"▶️ Ko'rish uchun: {deep}"
                 ),
                 parse_mode="HTML"
             ),
-            thumbnail_url=None,
-        )
-        results.append(result)
+        ))
 
-    if not results:
+    if not results and not offset:
         results.append(InlineQueryResultArticle(
             id="not_found",
             title="❌ Topilmadi",
             description="Boshqa nom yoki kod bilan qidiring",
             input_message_content=InputTextMessageContent(
-                message_text=f"❌ <b>{text}</b> topilmadi.",
+                message_text=f"❌ <b>{html.escape(text)}</b> topilmadi.",
                 parse_mode="HTML"
             )
         ))
 
-    await query.answer(results, cache_time=30, is_personal=True)
+    await query.answer(results, cache_time=30, is_personal=True, next_offset=next_offset)

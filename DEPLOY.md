@@ -77,6 +77,15 @@ Backup bor-u tiklab bo'lmasa, bot **ishga tushmaydi** (bo'sh DB bilan ishlab yax
 Cheklovlar: gzip hajmi 20 MB dan oshmasin (Bot API yuklab olish limiti); redeploy paytidagi oxirgi bir necha daqiqalik o'zgarishlar
 yo'qolishi mumkin (`BACKUP_INTERVAL_MIN` ni kichik qiling). Katta o'sishda tashqi DB (Neon/Turso) ga o'tish tavsiya etiladi.
 
+## 🔎 Qidiruv
+
+Qidiruv motori (`utils/search_engine.py`) xotiradagi indeks bilan ishlaydi (30 000 kinoda ~60-130 ms):
+lotin ↔ kirill, apostrof (`o'g'ri` = `oʻgʻri` = `ogri`), ko'p so'zli so'rov (`avatar suv`), xato yozuv (`titnaik` → Titanik, `узбек` ≈ `Ўзбек`),
+natijalar sahifalanadi. Faqat **aniq** moslikda (aniq kod/nom) kino darhol yuboriladi, qolganida ro'yxat ko'rsatiladi.
+Topilmasa: "Shuni nazarda tutdingizmi?" va **🔔 Qo'shilganda xabar bering** (kino qo'shilganda foydalanuvchiga avtomatik xabar boradi).
+Admin: `/admin` → **🔎 Topilmaganlar**: foydalanuvchilar eng ko'p qidirib topa olmagan kinolar (qaysi kinoni qo'shish kerakligini ko'rsatadi).
+`requirements.txt` dagi `rapidfuzz` ni olib tashlamang: usiz xato yozuv qidiruvi ~10 marta sekinroq (difflib).
+
 ## 🔒 Kontent himoyasi (forward/saqlash)
 
 `/admin` → ⚙️ Sozlamalar → **Kontent himoyasi**: ❌ Yopiq → 🆓 Faqat Free → 🔒 Hamma.

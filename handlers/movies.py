@@ -9,6 +9,7 @@ from utils.keyboards import (admin_menu, channel_post_keyboard, add_movie_format
                               add_movie_rating_kb, episodes_type_kb, movie_status_kb,
                               after_movie_add_kb, thumbnail_kb, episode_list_keyboard)
 from utils.keyboards import sbtn
+from utils.watchers import fire_notify
 
 router = Router()
 
@@ -342,6 +343,7 @@ async def add_media(message: Message, state: FSMContext, bot: Bot):
         db.init_episodes()
         start_ep = data.get("start_ep", 1)
         db.add_episode(movie["id"], start_ep, sent.message_id, tid)
+        fire_notify(bot, data["code"])      # shu kinoni so'ragan foydalanuvchilarga xabar (orqa fonda)
         # --- FIX: bu yerda db.update_movie(total_episodes=start_ep) chaqirilardi —
         # bu add_episode() ICHIDA allaqachon to'g'ri hisoblangan (haqiqiy episodes
         # qatorlar soniga teng) total_episodes qiymatini START_EP bilan (masalan
