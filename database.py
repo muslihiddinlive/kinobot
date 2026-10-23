@@ -218,9 +218,27 @@ def init_db():
         "ALTER TABLE users ADD COLUMN bio_checked_at TEXT",
         "ALTER TABLE bot_chats ADD COLUMN status TEXT DEFAULT 'member'",
         "ALTER TABLE bot_chats ADD COLUMN updated_at TEXT",
+        "ALTER TABLE admins ADD COLUMN perms TEXT",          # ruxsatlar (RBAC): "users,ban,movies"; NULL = rolga ko'ra
+        "ALTER TABLE users ADD COLUMN last_active TEXT",     # oxirgi faol kun (DAU/WAU/MAU uchun)
     ):
         try: conn.execute(stmt)
         except sqlite3.OperationalError: pass
+
+    # ── Admin panel 2.0 jadvallari ──
+    conn.execute("CREATE TABLE IF NOT EXISTS daily_active (day TEXT PRIMARY KEY, active INTEGER DEFAULT 0)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS error_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT DEFAULT (datetime('now')),
+        kind TEXT, message TEXT, update_id INTEGER)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, admin_id INTEGER,
+        note TEXT, created_at TEXT DEFAULT (datetime('now')))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_notes_user ON user_notes(user_id)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS user_tags (
+        user_id INTEGER, tag TEXT, added_by INTEGER, added_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (user_id, tag))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_tags_tag ON user_tags(tag)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_done ON audit_log(done_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_searchlogs_at ON search_logs(searched_at)")
 
     conn.commit(); conn.close()
 
@@ -238,8 +256,12 @@ def get_user(user_id):
 
 def register_user(user_id,username,full_name,referred_by=None):
     conn=get_conn()
-    conn.execute("INSERT OR IGNORE INTO users (user_id,username,full_name,referred_by) VALUES (?,?,?,?)",
+    cur=conn.execute("INSERT OR IGNORE INTO users (user_id,username,full_name,referred_by) VALUES (?,?,?,?)",
                  (user_id,username,full_name,referred_by))
+    if cur.rowcount == 1:      # yangi foydalanuvchi: bugun faol hisoblanadi (DAU/WAU/MAU uchun)
+        today=str(date.today())
+        conn.execute("UPDATE users SET last_active=? WHERE user_id=?",(today,user_id))
+        conn.execute("INSERT INTO daily_active (day,active) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET active=active+1",(today,))
     conn.commit(); conn.close()
 
 def set_user_lang(user_id,lang):

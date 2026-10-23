@@ -53,11 +53,15 @@ async def _edit(cb: CallbackQuery, text: str, rows):
 async def sa_menu(cb: CallbackQuery, state: FSMContext):
     if await _deny(cb): return
     await state.clear()
+    from utils import pin
     rows = grid([B("📡 Chatlar", "sa_chats_0"), B("🏆 Reyting", "sa_rank_7"),
+                 B("🛡 Ruxsatlar", "sa_perm"), B("🩺 Salomatlik", "sa_health"),
                  B("⚡ Reaksiyalar", "sa_react"), B("💾 Backup", "sa_backup"),
+                 B("📤 Hisobot", "sa_report"), B("🔐 PIN", "sa_pin"),
                  B("📤 Eksport", "adm_export"), B("📋 Audit", "adm_audit")])
     rows.append([B("🔙 Orqaga", "adm_back")])
-    await _edit(cb, "👑 <b>Superadmin panel</b>", rows)
+    warn = "" if pin.enabled() else "\n\n⚠️ <i>PIN o'rnatilmagan: 🔐 PIN bo'limidan o'rnatish tavsiya etiladi.</i>"
+    await _edit(cb, "👑 <b>Superadmin panel</b>" + warn, rows)
     await cb.answer()
 
 

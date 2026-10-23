@@ -351,10 +351,11 @@ def users_page_keyboard(users, page, total, lang="uz") -> InlineKeyboardMarkup:
         rows.append(nav)
     rows.append([InlineKeyboardButton(text="🔍 ID / ism / @", callback_data="adm_user_lookup"),
                  InlineKeyboardButton(text="🔤 Harf bilan", callback_data="lq_start")])
-    rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")])
+    rows.append([InlineKeyboardButton(text="🏷 Teglar bo'yicha", callback_data="ut_tags"),
+                 InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def user_actions_keyboard(user_id, back_cb: str = "adm_users") -> InlineKeyboardMarkup:
+def user_actions_keyboard(user_id, back_cb: str = "adm_users", notes: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 Plan", callback_data=f"give_plan_{user_id}"),
          InlineKeyboardButton(text="➕ Limit", callback_data=f"give_limit_{user_id}"),
@@ -362,6 +363,8 @@ def user_actions_keyboard(user_id, back_cb: str = "adm_users") -> InlineKeyboard
         [InlineKeyboardButton(text="📨 Xabar", callback_data=f"msg_user_{user_id}"),
          sbtn("🚫 Ban", "danger", callback_data=f"ban_{user_id}"),
          sbtn("✅ Unban", "success", callback_data=f"unban_{user_id}")],
+        [InlineKeyboardButton(text=f"🗒 Eslatmalar{f' ({notes})' if notes else ''}", callback_data=f"un_list_{user_id}"),
+         InlineKeyboardButton(text="🏷 Teglar", callback_data=f"un_tags_{user_id}")],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data=back_cb)],
     ])
 

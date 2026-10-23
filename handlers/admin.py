@@ -51,27 +51,7 @@ async def adm_back(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 # ── Dashboard/Statistika ──────────────────────────────
-@router.callback_query(F.data == "adm_stats")
-async def adm_stats(cb: CallbackQuery):
-    if not is_admin(cb.from_user.id): return await cb.answer()
-    s = db.get_stats()
-    text = (
-        f"📊 <b>Dashboard</b>\n\n"
-        f"👥 Foydalanuvchilar: <b>{s['total']}</b>\n"
-        f"🆕 Bugun: <b>{s['new_today']}</b>\n"
-        f"💎 PRO: <b>{s['pro']}</b>  |  👑 VIP: <b>{s['vip']}</b>  |  🚫 Ban: <b>{s['banned']}</b>\n"
-        f"⭐ Jami yulduz: <b>{s['total_stars']}</b>\n\n"
-        f"🎬 Kinolar: <b>{s['total_movies']}</b>\n"
-        f"📥 Jami yuklash: <b>{s['total_downloads']}</b>\n\n"
-        f"🔝 <b>Top 5 kino:</b>\n"
-    )
-    for i, m in enumerate(s["top_movies"], 1):
-        text += f"  {i}. {m['title']} — {m['downloads']} ta\n"
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 Yangilash", callback_data="adm_stats"),
-         InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")]
-    ]))
-    await cb.answer()
+# (Dashboard 2.0: handlers/dashboard.py, Audit 2.0: handlers/audit_view.py)
 
 # ── Foydalanuvchilar ──────────────────────────────────
 @router.callback_query(F.data == "adm_users")
@@ -107,7 +87,7 @@ async def user_lookup_start(cb: CallbackQuery, state: FSMContext):
     if not is_admin(cb.from_user.id): return await cb.answer()
     await state.set_state(AdminState.user_lookup)
     await cb.message.edit_text(
-        "🔍 User <b>ID</b>, <b>@username</b>, <b>ism/familiya</b> yoki <b>bio</b> dan so'z yuboring:",
+        "🔍 User <b>ID</b>, <b>@username</b>, <b>ism/familiya</b>, <b>bio</b> yoki <b>tag:teg</b> yuboring:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔤 Harf bilan", callback_data="lq_start"),
@@ -123,6 +103,17 @@ async def user_lookup(message: Message, state: FSMContext):
     if not q:
         await message.answer("❌ Matn yuboring.", reply_markup=admin_menu()); return
     user = None
+    if q.lower().startswith("tag:"):                       # tag:shubhali -> shu teg bilan foydalanuvchilar
+        from utils import admin_data as ad
+        needle = q[4:].strip().casefold()
+        tags = [t for t, _ in ad.all_tags() if needle and needle in t.casefold()]
+        if not tags:
+            await message.answer("❌ Bunday teg yo'q.", reply_markup=admin_menu()); return
+        found = ad.users_with_tag(tags[0], 0, 10)
+        rows = grid([user_button(u) for u in found]) + [[InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_users")]]
+        admin_nav.set_back(message.chat.id, "adm_users")
+        await message.answer(f"🏷 <b>{html.escape(tags[0])}</b> — {ad.count_users_with_tag(tags[0])} ta", parse_mode="HTML",
+                             reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)); return
     if q.startswith("@"): user = db.get_user_by_username(q)
     elif q.isdigit(): user = db.get_user(int(q))
     if user:
@@ -180,7 +171,13 @@ async def _show_user_detail(message, user, send=False):
     bio = (user["bio"] if "bio" in user.keys() else None)
     if bio:
         text += f"📝 Bio: {html.escape(bio[:200])}\n"
-    markup = user_actions_keyboard(user["user_id"], admin_nav.get_back(message.chat.id))
+    from utils import admin_data as ad
+    tags, notes_n = ad.get_tags(user["user_id"]), ad.count_notes(user["user_id"])
+    if tags:
+        text += f"🏷 Teglar: {', '.join(html.escape(t) for t in tags)}\n"
+    if notes_n:
+        text += f"🗒 Eslatmalar: {notes_n} ta\n"
+    markup = user_actions_keyboard(user["user_id"], admin_nav.get_back(message.chat.id), notes_n)
     if send:
         await message.answer(text, reply_markup=markup, parse_mode="HTML")
     else:
@@ -548,21 +545,6 @@ async def adm_tags(cb: CallbackQuery):
     await cb.answer()
 
 # ── Audit ─────────────────────────────────────────────
-@router.callback_query(F.data == "adm_audit")
-async def adm_audit(cb: CallbackQuery):
-    if not is_admin(cb.from_user.id): return await cb.answer()
-    conn = db.get_conn()
-    rows = conn.execute("SELECT * FROM audit_log ORDER BY done_at DESC LIMIT 20").fetchall()
-    conn.close()
-    text = "📋 <b>Audit Log</b> (oxirgi 20)\n\n"
-    for r in rows:
-        text += f"• {r['done_at'][:16]} | {r['action']} | {r['target']}\n"
-    if not rows: text += "Hozircha yo'q.\n"
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 Orqaga", callback_data="adm_back")]
-    ]))
-    await cb.answer()
-
 # ── Sozlamalar ────────────────────────────────────────
 @router.callback_query(F.data == "adm_settings")
 async def adm_settings(cb: CallbackQuery):

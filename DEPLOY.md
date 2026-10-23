@@ -77,6 +77,20 @@ Backup bor-u tiklab bo'lmasa, bot **ishga tushmaydi** (bo'sh DB bilan ishlab yax
 Cheklovlar: gzip hajmi 20 MB dan oshmasin (Bot API yuklab olish limiti); redeploy paytidagi oxirgi bir necha daqiqalik o'zgarishlar
 yo'qolishi mumkin (`BACKUP_INTERVAL_MIN` ni kichik qiling). Katta o'sishda tashqi DB (Neon/Turso) ga o'tish tavsiya etiladi.
 
+## 🛡 Admin panel 2.0
+
+- **Ruxsatlar (RBAC):** `/admin` → 👑 Superadmin → 🛡 Ruxsatlar: har admin uchun 13 ta ruxsat tugmalari (ban, reklama, kinolar, eksport...) va tayyor rollar
+  (👑 To'liq, 🛠 Moderator, 👁 Kuzatuvchi). Ruxsatlar HAR tugmada tekshiriladi. `ADMIN_IDS` (env) dagilar to'liq huquqli.
+- **Xavfli amallarga tasdiq:** ban, pullik reja berish, reklama yuborish, texnik rejim, kanal o'chirish, to'lovni tasdiqlash — alohida "Tasdiqlang" xabari bilan.
+- **PIN (superadmin):** 🔐 PIN bo'limida 4-8 raqamli PIN; superadmin paneli va adminlarni boshqarish PIN bilan ochiladi
+  (sessiya 5/15/60 daqiqa, 5 xato urinishdan keyin 10 daqiqa blok). PIN esdan chiqsa: Render'da `SA_PIN_DISABLE=1` o'rnating, kiring, yangi PIN qo'ying.
+- **Dashboard 2.0** (`/admin` → 📊 Statistika): DAU/WAU/MAU, yopishqoqlik, o'sish, daromad, konversiya, mini-grafiklar, rasmli diagramma, top kinolar/so'rovlar.
+  DAU/WAU/MAU o'lchash yangilanish kunidan boshlanadi (dastlabki kunlarda kam ko'rinadi).
+- **Salomatlik** (👑 → 🩺): uptime, RAM, event loop kechikishi, webhook navbati/xatosi, DB hajmi, backup holati, fon vazifalari, xatolar logi.
+- **Audit 2.0** (📋): sahifalash, admin/amal bo'yicha filtr, admin ismi bilan.
+- **Eslatma va teglar:** foydalanuvchi kartasida 🗒 Eslatmalar va 🏷 Teglar; teg bo'yicha ro'yxat (`🏷 Teglar bo'yicha`) va `tag:nom` qidiruvi.
+- **Avto-hisobot** (👑 → 📤 Hisobot): kunlik (7 kun) / haftalik (dushanba, 30 kun) XLSX Excel diagrammalari bilan, superadminga. Vaqt zonasi: `TZ_OFFSET_HOURS` (standart 5).
+
 ## 🔎 Qidiruv
 
 Qidiruv motori (`utils/search_engine.py`) xotiradagi indeks bilan ishlaydi (30 000 kinoda ~60-130 ms):

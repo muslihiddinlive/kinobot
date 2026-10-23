@@ -13,10 +13,12 @@ from middlewares.maintenance import MaintenanceMiddleware
 from middlewares.antiflood import AntiFloodMiddleware
 from middlewares.dedupe import DedupeMiddleware
 from middlewares.reactions import ReactionMiddleware
+from middlewares.activity import ActivityMiddleware
+from middlewares.guard import GuardMiddleware, set_dispatcher
 from handlers import admin, movies, payment, user, search
-from handlers import vip, inline_handler, broadcast_adv, admin_search, superadmin
+from handlers import vip, inline_handler, broadcast_adv, admin_search, superadmin, dashboard, audit_view, user_notes, sa_tools
 from utils.scheduler import scheduler_loop
-from utils import tg_backup
+from utils import tg_backup, health, reports, admin_data
 from utils.profile_sync import profile_sync_loop
 
 logging.basicConfig(
@@ -32,6 +34,10 @@ def setup_dispatcher():
 
     # Webhook: Telegram qayta yuborgan takroriy update'larni o'tkazib yuboramiz
     dp.update.outer_middleware(DedupeMiddleware())
+    dp.update.outer_middleware(ActivityMiddleware())     # DAU/WAU/MAU (kuniga 1 ta DB yozuvi / user)
+    # Admin tugmalari: ruxsatlar (RBAC), superadmin PIN, xavfli amallarga tasdiq
+    dp.callback_query.outer_middleware(GuardMiddleware())
+    set_dispatcher(dp)
     # Guruhlarda superadmin/adminlar xabariga avto-reaksiya (handlerlarni to'smaydi)
     dp.message.outer_middleware(ReactionMiddleware())
 
@@ -71,6 +77,10 @@ def setup_dispatcher():
                 )
         except Exception:
             pass
+        try:
+            admin_data.log_error("handler", f"{type(event.exception).__name__}: {event.exception}", event.update.update_id)
+        except Exception:
+            pass
         # Xato xabarlari 30 soniyada bittadan (bir xil xato oqimi guruhni to'ldirib yubormasligi uchun)
         if time.time() - _last_alert["t"] > 30:
             _last_alert["t"] = time.time()
@@ -89,6 +99,10 @@ def setup_dispatcher():
     dp.include_router(admin.router)
     dp.include_router(admin_search.router)   # harfli qidiruv (lq_*)
     dp.include_router(superadmin.router)     # superadmin paneli (sa_*)
+    dp.include_router(sa_tools.router)       # RBAC muharriri, salomatlik, PIN, hisobot
+    dp.include_router(dashboard.router)      # Dashboard 2.0
+    dp.include_router(audit_view.router)     # Audit 2.0
+    dp.include_router(user_notes.router)     # eslatma va teglar
     dp.include_router(broadcast_adv.router)
     dp.include_router(movies.router)
     dp.include_router(payment.router)
@@ -129,7 +143,9 @@ def run_webhook():
             asyncio.create_task(scheduler_loop(bot)),
             asyncio.create_task(tg_backup.backup_loop(bot)),
             asyncio.create_task(profile_sync_loop(bot)),
+            asyncio.create_task(reports.report_loop(bot)),
         ]
+        health.register_tasks(app["bg_tasks"])
         # URL'da maxfiy yo'l bor: logga to'liq yozilmaydi
         logger.info("✅ Webhook o'rnatildi: %s/wh/…", WEBHOOK_URL.split("/wh/")[0])
 
@@ -169,7 +185,9 @@ async def run_polling():
     init_episodes()
     tasks = [asyncio.create_task(scheduler_loop(bot)),
              asyncio.create_task(tg_backup.backup_loop(bot)),
-             asyncio.create_task(profile_sync_loop(bot))]
+             asyncio.create_task(profile_sync_loop(bot)),
+             asyncio.create_task(reports.report_loop(bot))]
+    health.register_tasks(tasks)
     logger.info("🚀 Polling rejimi")
     await dp.start_polling(
         bot,
