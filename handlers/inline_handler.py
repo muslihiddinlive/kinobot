@@ -4,7 +4,7 @@ import html
 from datetime import date
 
 from aiogram import Router, Bot
-from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent
+from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultsButton
 
 import database as db
 from utils import search_engine as engine
@@ -41,8 +41,9 @@ async def inline_search(query: InlineQuery, bot: Bot):
     offset = int(query.offset) if (query.offset or "").isdigit() else 0
     next_offset = ""
 
-    if not text:
+    if text in ("", "#"):
         # Bo'sh qidiruv — trending kinolar
+        text = ""
         movies = db.get_trending_movies(INLINE_PAGE)
     else:
         # Lotin/kirill, apostrof, ko'p so'zli, xatoga chidamli qidiruv + sahifalash (offset)
@@ -71,6 +72,9 @@ async def inline_search(query: InlineQuery, bot: Bot):
         if movie["user_rating"]:
             meta.append(f"⭐{movie['user_rating']}")
         meta.append(f"📥 {movie['downloads']}")
+        tags = " ".join(str(movie["tags"] or "").split()[:3])
+        if tags:
+            meta.append(tags)
 
         results.append(InlineQueryResultArticle(
             id=hashlib.md5(str(movie["code"]).encode()).hexdigest(),
@@ -79,8 +83,9 @@ async def inline_search(query: InlineQuery, bot: Bot):
             input_message_content=InputTextMessageContent(
                 message_text=(
                     f"🎬 <b>{title}</b>\n"
-                    f"🔢 Kod: <code>{code}</code>\n\n"
-                    f"▶️ Ko'rish uchun: {deep}"
+                    f"🔢 Kod: <code>{code}</code>\n"
+                    + (f"🏷 {html.escape(' '.join(str(movie['tags']).split()[:6]))}\n" if movie["tags"] else "")
+                    + f"\n▶️ Ko'rish uchun: {deep}"
                 ),
                 parse_mode="HTML"
             ),
@@ -97,4 +102,7 @@ async def inline_search(query: InlineQuery, bot: Bot):
             )
         ))
 
-    await query.answer(results, cache_time=30, is_personal=True, next_offset=next_offset)
+    # Teglar ro'yxatiga o'tish tugmasi (bo'sh qidiruvda yoki natija topilmaganda)
+    button = (InlineQueryResultsButton(text="🏷 Hashtaglar", start_parameter="tags")
+              if (not text or (not results or results[0].id == "not_found")) and not offset else None)
+    await query.answer(results, cache_time=30, is_personal=True, next_offset=next_offset, button=button)

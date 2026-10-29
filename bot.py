@@ -16,7 +16,7 @@ from middlewares.reactions import ReactionMiddleware
 from middlewares.activity import ActivityMiddleware
 from middlewares.guard import GuardMiddleware, set_dispatcher
 from handlers import admin, movies, payment, user, search
-from handlers import vip, inline_handler, broadcast_adv, admin_search, superadmin, dashboard, audit_view, user_notes, sa_tools
+from handlers import vip, inline_handler, broadcast_adv, admin_search, superadmin, dashboard, audit_view, user_notes, sa_tools, tags
 from utils.scheduler import scheduler_loop
 from utils import tg_backup, health, reports, admin_data
 from utils.profile_sync import profile_sync_loop
@@ -109,6 +109,7 @@ def setup_dispatcher():
     dp.include_router(vip.router)
     dp.include_router(user.router)
     dp.include_router(inline_handler.router)
+    dp.include_router(tags.router)     # /tags va hashtag ro'yxati (search'dan OLDIN)
     dp.include_router(search.router)   # ← OXIRDA (catch-all shu yerda)
 
     return bot, dp

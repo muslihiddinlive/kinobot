@@ -97,6 +97,9 @@ Qidiruv motori (`utils/search_engine.py`) xotiradagi indeks bilan ishlaydi (30 0
 lotin ↔ kirill, apostrof (`o'g'ri` = `oʻgʻri` = `ogri`), ko'p so'zli so'rov (`avatar suv`), xato yozuv (`titnaik` → Titanik, `узбек` ≈ `Ўзбек`),
 natijalar sahifalanadi. Faqat **aniq** moslikda (aniq kod/nom) kino darhol yuboriladi, qolganida ro'yxat ko'rsatiladi.
 Topilmasa: "Shuni nazarda tutdingizmi?" va **🔔 Qo'shilganda xabar bering** (kino qo'shilganda foydalanuvchiga avtomatik xabar boradi).
+**Hashtag qidiruvi:** kino teglari (`#patrick #spongebob`) bo'yicha ham qidiriladi: botda yoki istalgan chatda `@BotNomi Patrick` / `@BotNomi #patrick`
+(inline rejim, `@BotFather` → `/setinline` yoqilgan bo'lsin). Natijada kino tavsifida teglari ko'rinadi. `/tags` yoki 🔍 Qidirish → 🏷 Hashtaglar:
+mashhur teglar ro'yxati, tugmani bosganda inline qidiruv shu teg bilan ochiladi. Teglarni kino qo'shishda yoki ✏️ Tahrirlash → 🏷 Fishkalar orqali kiritasiz.
 Admin: `/admin` → **🔎 Topilmaganlar**: foydalanuvchilar eng ko'p qidirib topa olmagan kinolar (qaysi kinoni qo'shish kerakligini ko'rsatadi).
 `requirements.txt` dagi `rapidfuzz` ni olib tashlamang: usiz xato yozuv qidiruvi ~10 marta sekinroq (difflib).
 

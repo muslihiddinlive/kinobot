@@ -32,7 +32,8 @@ assert first("титаник") == "Titanik" and first("TITANIK!") == "Titanik"
 assert first("o'g'ri") == first("ogri") == first("oʻgʻri") == "O'g'ri"
 assert first("avatar suv") == "Avatar 2: Suv yo'li"
 assert first("tani") == "Titanik" and first("кино") == "Ўзбек кино" and first("ozbek") == "Ўзбек кино"
-assert first("узбек") == first("ўзбек") == first("uzbek") == "Ўзбек кино"      # у/ў/u/o chalkashligi (fuzzy)
+assert first("ўзбек") == first("ozbek") == "Ўзбек кино"
+assert "Ўзбек кино" in t("узбек")[:2] and "Ўзбек кино" in t("uzbek")[:2]          # у/ў/u/o chalkashligi (fuzzy); aniq teg ("uzbek serial") bilan yonma-yon
 assert first("hobbit") == first("xobbit") == first("хоббит") == "Хоббит: Kutilmagan sayohat"
 print("OK 1: normalizatsiya, lotin/kirill, apostrof, ko'p so'zli, bo'lak")
 # xato
@@ -59,6 +60,22 @@ assert r0.total == 26 and len(r0.rows) == 10 and len(r1.rows) == 10 and len(r2.r
 assert len({x["id"] for x in r0.rows + r1.rows + r2.rows}) == 26 and r2.rows[-1]["title"] == "Shaytanat" or True
 assert len({x["id"] for x in r0.rows + r1.rows + r2.rows}) == 26
 print("OK 5: sahifalash (26 ta -> 10+10+6, takrorsiz)")
+# hashtag qidiruvi
+for code, title, tags, dl in [("PSS","Patrick Star Show","#patrick #spongebob",300),("BB","Bikini Bottom","#spongebob #patrick",900),
+                              ("SBH","Spongebob: Hero","#spongebob",50),("TJ","Tom va Jerry","#multfilm",10),("ZZ","Boshqa nom","#Patrick_Fan",5)]:
+    db.add_movie(code, title, 2, 5000 + len(code), "", "", "", "", "", "", tags, 1)
+    _c = db.get_conn(); _c.execute("UPDATE movies SET downloads=? WHERE code=?", (dl, code)); _c.commit(); _c.close()
+se.invalidate()
+assert t("#patrick")[:2] == ["Bikini Bottom", "Patrick Star Show"], t("#patrick")   # aniq teg yuqorida, teng bo'lsa mashhurlik (900 > 300)
+assert t("#patrick")[2:] == ["Boshqa nom"]                                     # #Patrick_Fan: so'z boshi bo'yicha, aniq moslardan keyin
+assert t("#patrick_fan") == ["Boshqa nom"]
+assert set(t("#spongebob")) == {"Patrick Star Show", "Bikini Bottom", "Spongebob: Hero"}
+assert set(t("#pat")) == {"Patrick Star Show", "Bikini Bottom", "Boshqa nom"} and "Spongebob: Hero" not in t("#pat")   # so'z boshi
+assert set(t("#patrick #spongebob")) == {"Patrick Star Show", "Bikini Bottom"} and t("#patrick #multfilm") == []   # hamma teg mos
+assert t("#zzzzq") == [] and "Patrick Star Show" in t("#patrik")              # teg xatosi (fuzzy)
+assert "Tom va Jerry" not in t("#patrick") and set(t("patrick"))>= {"Patrick Star Show","Bikini Bottom"}   # '#'siz yozilsa ham topiladi
+tt = dict(se.top_tags()); assert tt["#spongebob"] == 3 and tt["#patrick"] == 2 and tt["#patrick_fan"] == 1 and se.top_tags()[0][0] == "#spongebob", se.top_tags()[:3]
+print("OK 5b: hashtag qidiruvi (#teg, so'z boshi, bir nechta teg, xato, mashhur teglar)")
 # kesh invalidatsiyasi (yozishda)
 assert t("yangi kino") == []
 db.add_movie("YANGI", "Yangi Kino", 2, 3000, "", "", "", "", "", "", "", 1)

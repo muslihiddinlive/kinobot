@@ -57,7 +57,8 @@ def search_menu(lang="uz") -> InlineKeyboardMarkup:
          InlineKeyboardButton(text="🔤 Nom bo'yicha", callback_data="search_by_name")],
         [InlineKeyboardButton(text="🎭 Tur bo'yicha", callback_data="browse_media"),
          InlineKeyboardButton(text="🎲 Tasodifiy", callback_data="random_movie")],
-        [InlineKeyboardButton(text="📢 Kanaldan topish", url=REQUIRED_CHANNEL_URL)],
+        [InlineKeyboardButton(text="🏷 Hashtaglar", callback_data="tags_browse"),
+         InlineKeyboardButton(text="📢 Kanaldan topish", url=REQUIRED_CHANNEL_URL)],
         [InlineKeyboardButton(text=t("home", lang), callback_data="back_main")],
     ])
 

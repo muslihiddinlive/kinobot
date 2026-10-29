@@ -14,7 +14,7 @@ from aiogram.types import Update, CallbackQuery, Message, Chat, User, InlineQuer
 import database as db
 from utils import search_engine as se
 from utils.watchers import notify_watchers
-from handlers import search, inline_handler, admin_search
+from handlers import search, inline_handler, admin_search, tags
 
 CALLS = []
 class MockSession(BaseSession):
@@ -29,7 +29,7 @@ class MockSession(BaseSession):
     def check_response(self, *a, **k): pass
 
 bot = Bot(token=os.environ["BOT_TOKEN"], session=MockSession())
-dp = Dispatcher(); dp.include_router(admin_search.router); dp.include_router(inline_handler.router); dp.include_router(search.router)
+dp = Dispatcher(); dp.include_router(admin_search.router); dp.include_router(inline_handler.router); dp.include_router(tags.router); dp.include_router(search.router)
 SENT = []
 async def fake_send(message, b, code): SENT.append(code)
 search._send_movie_by_code = fake_send
@@ -108,5 +108,28 @@ async def main():
     assert "&lt;b&gt;" in ans["results"][0]["input_message_content"]["message_text"], ans["results"][0]
     ans = [x for x in await inline(100, "zzzqqqx") if x[0] == "AnswerInlineQuery"][0][1]; assert ans["results"][0]["id"] == "not_found"
     print("OK 7: inline (get_me 1 marta, 20 tadan sahifalash, HTML-escape, topilmadi)")
+    # 8) hashtag: inline (@bot Patrick), tegli tavsif, "Hashtaglar" tugmasi, /start tags, /tags, menyu
+    for code, title, tg, dl in [("PS","Patrick Show","#patrick #spongebob",300),("BBX","Bikini Bottom","#spongebob #patrick",900),("TJ2","Tom va Jerry","#multfilm",10)]:
+        db.add_movie(code, title, 2, 8000 + len(title), "2021", "AQSH", "uz", "1080p", "", "", tg, 1)
+        _c = db.get_conn(); _c.execute("UPDATE movies SET downloads=? WHERE code=?", (dl, code)); _c.commit(); _c.close()
+    se.invalidate()
+    ans = [x for x in await inline(100, "Patrick") if x[0] == "AnswerInlineQuery"][0][1]
+    titles = [r["title"] for r in ans["results"]]
+    # "Patrick" sarlavhada bor kino (nom boshi) birinchi, teg bo'yicha topilgani keyin
+    assert titles[:2] == ["🎬 Patrick Show", "🎬 Bikini Bottom"] and "Tom va Jerry" not in " ".join(titles), titles
+    assert "#patrick" in ans["results"][1]["description"] and "🏷 #spongebob #patrick" in ans["results"][1]["input_message_content"]["message_text"]
+    ans2 = [x for x in await inline(100, "#patrick") if x[0] == "AnswerInlineQuery"][0][1]
+    assert [r["title"] for r in ans2["results"]] == ["🎬 Bikini Bottom", "🎬 Patrick Show"], ans2["results"]   # faqat teg: mashhurlik bo'yicha
+    assert not ans.get("button")                                                      # natija bor: tugma ko'rinmaydi
+    for q in ("", "#"):
+        a = [x for x in await inline(100, q) if x[0] == "AnswerInlineQuery"][0][1]; assert a["button"]["start_parameter"] == "tags", a.get("button")
+    a = [x for x in await inline(100, "#zzzqqq") if x[0] == "AnswerInlineQuery"][0][1]; assert a["button"]["start_parameter"] == "tags"
+    def sw(d): return [b["switch_inline_query_current_chat"] for b in btns(d) if b.get("switch_inline_query_current_chat")]
+    d = last(await say(100, "/start tags")); assert "#spongebob" in sw(d) and "#patrick" in sw(d) and "@kinotest_bot #teg" in d["text"], d
+    d = last(await say(100, "/tags")); assert "#patrick" in sw(d)
+    d = last(await press(100, "tags_browse")); assert "#spongebob" in sw(d)
+    assert "tags_browse" in [b.get("callback_data") for b in btns({"reply_markup": __import__("utils.keyboards", fromlist=["x"]).search_menu("uz").model_dump(exclude_none=True)})]
+    d = last(await say(100, "zzzqqqx")); assert "tags_browse" in [b.get("callback_data") for b in btns(d)]
+    print("OK 8: hashtag (inline @bot Patrick/#patrick, tegli tavsif, Hashtaglar tugmasi, /start tags, /tags, menyu)")
     print("ALL FLOWS OK")
 asyncio.run(main())

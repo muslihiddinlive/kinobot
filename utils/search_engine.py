@@ -53,16 +53,18 @@ Result = namedtuple("Result", "rows total items fuzzy")
 
 
 class _Entry:
-    __slots__ = ("row", "code", "title", "tokens", "pool", "pop")
+    __slots__ = ("row", "code", "title", "tokens", "tagtokens", "hashtags", "pool", "pop")
 
     def __init__(self, row):
         self.row = row
         self.code = norm(row["code"] or "").replace(" ", "")
         self.title = norm(row["title"] or "")
         self.tokens = self.title.split()
-        tags = norm(row["tags"] or "")
+        self.tagtokens = norm(row["tags"] or "").split()
+        # butun hashtaglar (#patrick_fan -> "patrickfan"): hashtag rejimida har teg yaxlit solishtiriladi
+        self.hashtags = [h for h in (norm(r).replace(" ", "") for r in str(row["tags"] or "").split()) if h]
         extra = norm(" ".join(str(row[k] or "") for k in ("year", "country", "language")))
-        self.pool = self.tokens + tags.split() + extra.split()
+        self.pool = self.tokens + self.tagtokens + extra.split()
         dl = int(row["downloads"] or 0)
         self.pop = min(40.0, math.log1p(dl) * 6) + (25.0 if row["is_trending"] else 0.0)
 
@@ -73,6 +75,9 @@ _built = 0.0
 _titles: list = []
 _tok_list: list = []        # noyob sarlavha so'zlari
 _tok_map: dict = {}         # so'z -> [entry indekslari]
+_tag_list: list = []        # noyob teg so'zlari (normallashgan)
+_tag_map: dict = {}         # teg -> [entry indekslari]
+_top_tags: list = []        # [("#teg", kinolar soni)] mashhurlik bo'yicha
 
 
 def invalidate() -> None:
@@ -81,7 +86,7 @@ def invalidate() -> None:
 
 
 def _load():
-    global _index, _built, _titles, _tok_list, _tok_map
+    global _index, _built, _titles, _tok_list, _tok_map, _tag_list, _tag_map, _top_tags
     if time.time() - _built < TTL and _index is not None and _built:
         return _index
     with _lock:
@@ -99,6 +104,18 @@ def _load():
                 if len(tk) >= 3:
                     tm.setdefault(tk, []).append(i)
         _tok_map, _tok_list = tm, list(tm)
+        tg: dict = {}
+        shown: dict = {}
+        for i, e in enumerate(_index):
+            for tk in set(e.hashtags):
+                tg.setdefault(tk, []).append(i)
+            for raw in str(e.row["tags"] or "").split():       # ko'rinadigan shakl: "#patrick"
+                key = norm(raw).replace(" ", "")
+                if key:
+                    shown.setdefault(key, "#" + raw.lstrip("#").lower())
+        _tag_map, _tag_list = tg, list(tg)
+        ranked = sorted(tg.items(), key=lambda kv: (-len(kv[1]), -sum(int(_index[i].row["downloads"] or 0) for i in kv[1])))
+        _top_tags = [(shown.get(k, "#" + k), len(v)) for k, v in ranked]
         _built = time.time()
     return _index
 
@@ -113,6 +130,8 @@ def _strict(e: _Entry, qn: str, qtokens: list, qcode: str) -> tuple:
         return 800, "prefix"
     if all(any(tt.startswith(qt) for tt in e.tokens) for qt in qtokens):
         return (650 if qn in e.title else 600), "tokens"
+    if e.tagtokens and all(qt in e.tagtokens for qt in qtokens):
+        return 520, "tag"                              # so'rov butunlay teg(lar)ga teng: "Patrick" -> #patrick
     if len(qn) >= 3 and qn in e.title:
         return 500, "substr"
     hit = [any(t.startswith(qt) for t in e.pool) for qt in qtokens]
@@ -178,6 +197,8 @@ def search(query: str, limit: int = PAGE, offset: int = 0, fuzzy: bool = True) -
         return Result([], 0, [], False)
     entries = _load()
     qtokens = qn.split()
+    if q.lstrip().startswith("#"):
+        return _tag_search(q, qtokens, entries, limit, offset, fuzzy)
     qcode = qn.replace(" ", "")
     scored = []
     for e in entries:
@@ -210,6 +231,45 @@ def search(query: str, limit: int = PAGE, offset: int = 0, fuzzy: bool = True) -
     scored.sort(key=lambda it: -it.score)
     page = scored[offset: offset + limit]
     return Result([it.row for it in page], len(scored), page, used_fuzzy)
+
+
+def _tag_search(q: str, qtokens: list, entries: list, limit: int, offset: int, fuzzy: bool) -> Result:
+    """Hashtag rejimi ("#patrick", "#pat", "#patrick #spongebob"): faqat teglar bo'yicha; hamma teglar mos kelishi kerak."""
+    wanted = [norm(p).replace(" ", "") for p in q.replace(",", " ").split() if norm(p)]
+    if not wanted:
+        return Result([], 0, [], False)
+    last = len(wanted) - 1
+    scored = []
+    for e in entries:
+        exact = True
+        ok = True
+        for i, w in enumerate(wanted):
+            # oxirgi teg yozilayotgan bo'lishi mumkin: so'z boshi bo'yicha ham mos keladi (aniq mosdan pastroq)
+            if w in e.hashtags:
+                continue
+            if i == last and len(w) >= 2 and any(t.startswith(w) for t in e.hashtags):
+                exact = False
+                continue
+            ok = False
+            break
+        if ok:
+            scored.append(Item(e.row, (700 if exact else 650) + e.pop, "tag"))
+    used_fuzzy = False
+    if not scored and fuzzy and len(wanted) == 1 and len(wanted[0]) >= 4:
+        near = _process.extract(wanted[0], _tag_list, scorer=_fuzz.ratio, limit=3, score_cutoff=80) if _process is not None else []
+        for tag, sc, _ in near:
+            for i in _tag_map[tag]:
+                scored.append(Item(entries[i].row, 450 + (sc - 80) + entries[i].pop / 4, "fuzzy"))
+                used_fuzzy = True
+    scored.sort(key=lambda it: -it.score)
+    page = scored[offset: offset + limit]
+    return Result([it.row for it in page], len(scored), page, used_fuzzy)
+
+
+def top_tags(limit: int = 24) -> list:
+    """Mashhur teglar: [("#patrick", kinolar_soni)]."""
+    _load()
+    return _top_tags[:limit]
 
 
 def suggest(query: str, n: int = 3) -> list:

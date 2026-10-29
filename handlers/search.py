@@ -73,7 +73,8 @@ async def _do_search(message, bot, query, lang, retry_rows=None, user_id=None, b
         if sug:
             text += "\n\n" + _s("didyoumean", lang)
             rows += [[InlineKeyboardButton(text=f"🎬 {str(m['title'])[:40]}", callback_data=f"get_movie_{m['code']}")] for m in sug]
-        rows.append([InlineKeyboardButton(text=_s("watch", lang), callback_data="watch_q")])
+        rows.append([InlineKeyboardButton(text=_s("watch", lang), callback_data="watch_q"),
+                     InlineKeyboardButton(text="🏷 Hashtaglar", callback_data="tags_browse")])
         rows += retry_rows or [
             [InlineKeyboardButton(text=t("menu_search", lang), callback_data="search")],
             [InlineKeyboardButton(text=t("menu_request", lang), callback_data="request_movie")],
@@ -207,6 +208,14 @@ async def cmd_start(message: Message, state: FSMContext, bot: Bot):
     user = message.from_user
     args = message.text.split()
     referred_by = None
+
+    # Deep link: /start tags  (inline natijalardagi "🏷 Hashtaglar" tugmasi)
+    if len(args) > 1 and args[1] == "tags":
+        db.register_user(user.id, user.username or "", user.full_name)
+        from handlers.tags import tags_view
+        text, kb = await tags_view(bot, db.get_user_lang(user.id))
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        return
 
     # Deep link: /start movie_CODE
     if len(args) > 1 and args[1].startswith("movie_"):
